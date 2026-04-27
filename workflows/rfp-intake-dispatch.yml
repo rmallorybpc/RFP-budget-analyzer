@@ -1,0 +1,165 @@
+# TMG RFP Analyzer — Intake Dispatch Workflow
+# Triggered by Cloudflare intake Worker via repository dispatch API
+# Event type: rfp-submission
+#
+# Payload from Worker:
+#   submissionId  — unique submission identifier
+#   company       — submitting company name
+#   contact       — contact person name
+#   email         — contact email
+#   r2Key         — R2 object key for the PDF e.g. rfp-pdfs/sub_123/filename.pdf
+#   rfpFileName   — original PDF filename
+#   submittedAt   — ISO timestamp
+
+name: RFP Intake Dispatch
+
+on:
+  repository_dispatch:
+    types: [rfp-submission]
+
+jobs:
+  process-intake:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      # ── STEP 1: Log incoming submission ───────────────────────────────────
+      - name: Log submission details
+        run: |
+          echo "## RFP Submission Received" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Submission ID | ${{ github.event.client_payload.submissionId }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Company | ${{ github.event.client_payload.company }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Contact | ${{ github.event.client_payload.contact }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| RFP File | ${{ github.event.client_payload.rfpFileName }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Submitted | ${{ github.event.client_payload.submittedAt }} |" >> $GITHUB_STEP_SUMMARY
+
+      # ── STEP 2: Checkout repository ───────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── STEP 3: Install AWS CLI for R2 download ───────────────────────────
+      - name: Install AWS CLI
+        run: |
+          pip install awscli --quiet
+
+      # ── STEP 4: Download PDF from Cloudflare R2 ───────────────────────────
+      - name: Download RFP PDF from R2
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ACCOUNT_ID:         ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET_NAME:        ${{ secrets.R2_BUCKET_NAME }}
+          R2_KEY:                ${{ github.event.client_payload.r2Key }}
+          RFP_FILENAME:          ${{ github.event.client_payload.rfpFileName }}
+          SUBMISSION_ID:         ${{ github.event.client_payload.submissionId }}
+        run: |
+          # R2 S3-compatible endpoint
+          R2_ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+
+          # Create destination directory using submission ID as subfolder
+          DEST_DIR="rfp-pdfs/${SUBMISSION_ID}"
+          mkdir -p "${DEST_DIR}"
+
+          echo "Downloading: ${R2_KEY}"
+          echo "Destination: ${DEST_DIR}/${RFP_FILENAME}"
+
+          aws s3 cp "s3://${R2_BUCKET_NAME}/${R2_KEY}" \
+            "${DEST_DIR}/${RFP_FILENAME}" \
+            --endpoint-url "${R2_ENDPOINT}" \
+            --region auto
+
+          echo "Download complete."
+          ls -lh "${DEST_DIR}/"
+
+      # ── STEP 5: Validate downloaded file ──────────────────────────────────
+      - name: Validate PDF file
+        env:
+          RFP_FILENAME: ${{ github.event.client_payload.rfpFileName }}
+          SUBMISSION_ID: ${{ github.event.client_payload.submissionId }}
+        run: |
+          DEST_PATH="rfp-pdfs/${SUBMISSION_ID}/${RFP_FILENAME}"
+
+          if [ ! -f "${DEST_PATH}" ]; then
+            echo "ERROR: PDF file not found at ${DEST_PATH}"
+            exit 1
+          fi
+
+          FILE_SIZE=$(stat -c%s "${DEST_PATH}" 2>/dev/null || stat -f%z "${DEST_PATH}")
+          if [ "${FILE_SIZE}" -lt 1000 ]; then
+            echo "ERROR: PDF file appears empty or corrupt (${FILE_SIZE} bytes)"
+            exit 1
+          fi
+
+          echo "PDF validated: ${DEST_PATH} (${FILE_SIZE} bytes)"
+          echo "PDF_PATH=${DEST_PATH}" >> $GITHUB_ENV
+
+      # ── STEP 6: Write submission metadata file ────────────────────────────
+      - name: Write submission metadata
+        env:
+          SUBMISSION_ID:  ${{ github.event.client_payload.submissionId }}
+          COMPANY:        ${{ github.event.client_payload.company }}
+          CONTACT:        ${{ github.event.client_payload.contact }}
+          EMAIL:          ${{ github.event.client_payload.email }}
+          RFP_FILENAME:   ${{ github.event.client_payload.rfpFileName }}
+          SUBMITTED_AT:   ${{ github.event.client_payload.submittedAt }}
+        run: |
+          DEST_DIR="rfp-pdfs/${SUBMISSION_ID}"
+          METADATA_PATH="${DEST_DIR}/submission-metadata.json"
+
+          cat > "${METADATA_PATH}" << EOF
+          {
+            "submissionId":  "${SUBMISSION_ID}",
+            "company":       "${COMPANY}",
+            "contact":       "${CONTACT}",
+            "email":         "${EMAIL}",
+            "rfpFileName":   "${RFP_FILENAME}",
+            "submittedAt":   "${SUBMITTED_AT}",
+            "workflowRunId": "${GITHUB_RUN_ID}"
+          }
+          EOF
+
+          echo "Metadata written to ${METADATA_PATH}"
+          cat "${METADATA_PATH}"
+
+      # ── STEP 7: Commit PDF and metadata to trigger conversion pipeline ─────
+      - name: Commit PDF to rfp-pdfs/
+        env:
+          SUBMISSION_ID: ${{ github.event.client_payload.submissionId }}
+          COMPANY:       ${{ github.event.client_payload.company }}
+          RFP_FILENAME:  ${{ github.event.client_payload.rfpFileName }}
+        run: |
+          git config user.name  "TMG RFP Analyzer"
+          git config user.email "actions@github.com"
+
+          git add "rfp-pdfs/${SUBMISSION_ID}/"
+
+          # Only commit if there are changes
+          if git diff --staged --quiet; then
+            echo "No changes to commit — file may already exist."
+          else
+            git commit -m "intake: ${COMPANY} — ${RFP_FILENAME} [${SUBMISSION_ID}]"
+            git push
+            echo "Committed and pushed. Conversion pipeline will trigger automatically."
+          fi
+
+      # ── STEP 8: Update workflow summary ───────────────────────────────────
+      - name: Update run summary
+        if: always()
+        env:
+          SUBMISSION_ID: ${{ github.event.client_payload.submissionId }}
+          COMPANY:       ${{ github.event.client_payload.company }}
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Pipeline Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "PDF committed to \`rfp-pdfs/${SUBMISSION_ID}/\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Conversion workflow will trigger automatically on push to \`rfp-pdfs/**/*.pdf\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Next step: monitor the **Convert RFP PDF to Markdown** workflow run for ${COMPANY}" >> $GITHUB_STEP_SUMMARY
