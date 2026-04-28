@@ -3,8 +3,8 @@ name: local-multistage-refinement
 on:
   push:
     paths:
-      - rfp-markdown/**/*.md
-      - '!rfp-markdown/generated/**/*.md'
+      - rfp-markdown/generated/*.md
+      - '!rfp-markdown/generated/*-final*.md'
       - '!rfp-markdown/audit/**'
       - prompts/**
       - src/**
@@ -66,7 +66,7 @@ jobs:
               echo "workflow_dispatch called without file_path or uploads_glob; no targets selected." >&2
             fi
           elif [[ "${{ github.event_name }}" == "push" ]]; then
-            # On push, process only source markdown files changed in the triggering push.
+            # On push, process only converted markdown files in rfp-markdown/generated/.
             before="${{ github.event.before }}"
             after="${{ github.sha }}"
 
@@ -84,9 +84,8 @@ jobs:
                 path="$target_path"
               fi
 
-              if [[ "$path" =~ ^rfp-markdown/.+\.md$ ]] && \
-                 [[ ! "$path" =~ ^rfp-markdown/generated/ ]] && \
-                 [[ ! "$path" =~ ^rfp-markdown/audit/ ]]; then
+              if [[ "$path" =~ ^rfp-markdown/generated/[^/]+\.md$ ]] && \
+                 [[ ! "$path" =~ -final[^/]*\.md$ ]]; then
                 echo "$path"
               fi
             done < .tmp/diff.txt | sort -u >> .tmp/targets.txt || true
@@ -108,9 +107,8 @@ jobs:
                 path="$target_path"
               fi
 
-              if [[ "$path" =~ ^rfp-markdown/.+\.md$ ]] && \
-                 [[ ! "$path" =~ ^rfp-markdown/generated/ ]] && \
-                 [[ ! "$path" =~ ^rfp-markdown/audit/ ]]; then
+              if [[ "$path" =~ ^rfp-markdown/generated/[^/]+\.md$ ]] && \
+                 [[ ! "$path" =~ -final[^/]*\.md$ ]]; then
                 echo "$path"
               fi
             done < .tmp/diff.txt | sort -u >> .tmp/targets.txt || true
@@ -525,7 +523,7 @@ jobs:
           shopt -s nullglob
           for final_md in rfp-markdown/generated/*-final.md; do
             stem="$(basename "$final_md" -final.md)"
-            src="rfp-markdown/${stem}.md"
+            src="rfp-markdown/generated/${stem}.md"
 
             if [[ ! -f "$src" ]]; then
               rm -f \

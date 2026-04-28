@@ -88,10 +88,45 @@ jobs:
         if: steps.diff.outputs.changed_count != '0'
         run: |
           set -euo pipefail
+
+          mkdir -p rfp-markdown/generated
+
+          move_to_generated() {
+            local pdf="$1"
+            local rel src_md base_name dest_md src_dir
+
+            rel="${pdf#rfp-pdfs/}"
+            src_md="rfp-markdown/${rel%.*}.md"
+            base_name="$(basename "${pdf%.*}").md"
+            dest_md="rfp-markdown/generated/${base_name}"
+
+            if [[ -f "$src_md" ]]; then
+              if [[ "$src_md" != "$dest_md" ]]; then
+                mv -f "$src_md" "$dest_md"
+                echo "moved: $src_md -> $dest_md"
+
+                # Best-effort cleanup of now-empty nested folders under rfp-markdown/.
+                src_dir="$(dirname "$src_md")"
+                while [[ "$src_dir" != "rfp-markdown" && "$src_dir" != "." ]]; do
+                  rmdir "$src_dir" 2>/dev/null || break
+                  src_dir="$(dirname "$src_dir")"
+                done
+              fi
+            fi
+          }
+
           while IFS= read -r pdf_path; do
             [[ -z "$pdf_path" ]] && continue
-            if [[ -f "$pdf_path" || -d "$pdf_path" ]]; then
+            if [[ -f "$pdf_path" ]]; then
               node convert-pdf-to-markdown.js "$pdf_path" --ocr-fallback --min-text-chars 400
+              move_to_generated "$pdf_path"
+            elif [[ -d "$pdf_path" ]]; then
+              node convert-pdf-to-markdown.js "$pdf_path" --ocr-fallback --min-text-chars 400
+
+              while IFS= read -r nested_pdf; do
+                [[ -z "$nested_pdf" ]] && continue
+                move_to_generated "$nested_pdf"
+              done < <(find "$pdf_path" -type f -iname '*.pdf' | sort)
             fi
           done < .tmp/changed_pdfs.txt
 
@@ -101,8 +136,8 @@ jobs:
           set -euo pipefail
           while IFS= read -r deleted_pdf; do
             [[ -z "$deleted_pdf" ]] && continue
-            rel="${deleted_pdf#rfp-pdfs/}"
-            md="rfp-markdown/${rel%.pdf}.md"
+            stem="$(basename "${deleted_pdf%.*}")"
+            md="rfp-markdown/generated/${stem}.md"
             if [[ -f "$md" ]]; then
               rm -f "$md"
               echo "removed: $md"
