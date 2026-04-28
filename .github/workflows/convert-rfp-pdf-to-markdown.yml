@@ -93,14 +93,14 @@ jobs:
 
           move_to_generated() {
             local pdf="$1"
-            local rel src_md base_name dest_md src_dir
+            local rel src_md dest_md src_dir
 
             rel="${pdf#rfp-pdfs/}"
             src_md="rfp-markdown/${rel%.*}.md"
-            base_name="$(basename "${pdf%.*}").md"
-            dest_md="rfp-markdown/generated/${base_name}"
+            dest_md="rfp-markdown/generated/${rel%.*}.md"
 
             if [[ -f "$src_md" ]]; then
+              mkdir -p "$(dirname "$dest_md")"
               if [[ "$src_md" != "$dest_md" ]]; then
                 mv -f "$src_md" "$dest_md"
                 echo "moved: $src_md -> $dest_md"
@@ -136,8 +136,8 @@ jobs:
           set -euo pipefail
           while IFS= read -r deleted_pdf; do
             [[ -z "$deleted_pdf" ]] && continue
-            stem="$(basename "${deleted_pdf%.*}")"
-            md="rfp-markdown/generated/${stem}.md"
+            rel="${deleted_pdf#rfp-pdfs/}"
+            md="rfp-markdown/generated/${rel%.*}.md"
             if [[ -f "$md" ]]; then
               rm -f "$md"
               echo "removed: $md"

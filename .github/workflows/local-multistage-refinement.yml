@@ -3,8 +3,8 @@ name: local-multistage-refinement
 on:
   push:
     paths:
-      - rfp-markdown/generated/*.md
-      - '!rfp-markdown/generated/*-final*.md'
+      - rfp-markdown/generated/**/*.md
+      - '!rfp-markdown/generated/**/*-final*.md'
       - '!rfp-markdown/audit/**'
       - prompts/**
       - src/**
@@ -66,7 +66,7 @@ jobs:
               echo "workflow_dispatch called without file_path or uploads_glob; no targets selected." >&2
             fi
           elif [[ "${{ github.event_name }}" == "push" ]]; then
-            # On push, process only converted markdown files in rfp-markdown/generated/.
+            # On push, process only converted markdown files under rfp-markdown/generated/.
             before="${{ github.event.before }}"
             after="${{ github.sha }}"
 
@@ -84,8 +84,8 @@ jobs:
                 path="$target_path"
               fi
 
-              if [[ "$path" =~ ^rfp-markdown/generated/[^/]+\.md$ ]] && \
-                 [[ ! "$path" =~ -final[^/]*\.md$ ]]; then
+                if [[ "$path" =~ ^rfp-markdown/generated/.+\.md$ ]] && \
+                  [[ ! "$path" =~ -final[^/]*\.md$ ]]; then
                 echo "$path"
               fi
             done < .tmp/diff.txt | sort -u >> .tmp/targets.txt || true
@@ -107,8 +107,8 @@ jobs:
                 path="$target_path"
               fi
 
-              if [[ "$path" =~ ^rfp-markdown/generated/[^/]+\.md$ ]] && \
-                 [[ ! "$path" =~ -final[^/]*\.md$ ]]; then
+                if [[ "$path" =~ ^rfp-markdown/generated/.+\.md$ ]] && \
+                  [[ ! "$path" =~ -final[^/]*\.md$ ]]; then
                 echo "$path"
               fi
             done < .tmp/diff.txt | sort -u >> .tmp/targets.txt || true
@@ -409,8 +409,10 @@ jobs:
             [[ -z "$target" ]] && continue
             [[ ! -f "$target" ]] && continue
 
+            target_rel="${target#rfp-markdown/generated/}"
             stem="$(basename "$target" .md)"
-            case_dir="$RUN_DIR/$stem"
+            target_base="${target_rel%.md}"
+            case_dir="$RUN_DIR/$target_base"
             mkdir -p "$case_dir"
 
             cp "$target" "$case_dir/original.md"
@@ -474,13 +476,14 @@ jobs:
                 exit 1
               fi
 
-              final_out="rfp-markdown/generated/${stem}-final.md"
+              final_out="rfp-markdown/generated/${target_base}-final.md"
+              mkdir -p "$(dirname "$final_out")"
               write_final_with_last_run "$stage_d_md" "$final_out"
 
               python -m pdf_multi_agent_analysis.cli analyze-markdown \
                 "$final_out" \
                 --assets-dir assets \
-                --out-dir rfp-markdown/generated
+                --out-dir "$(dirname "$final_out")"
 
               LAST_SUCCESS="$final_out"
               echo "$LAST_SUCCESS" > "$RUN_DIR/last-success-artifact.txt"
@@ -520,21 +523,19 @@ jobs:
         run: |
           set -euo pipefail
 
-          shopt -s nullglob
-          for final_md in rfp-markdown/generated/*-final.md; do
-            stem="$(basename "$final_md" -final.md)"
-            src="rfp-markdown/generated/${stem}.md"
+          while IFS= read -r final_md; do
+            src="${final_md%-final.md}.md"
 
             if [[ ! -f "$src" ]]; then
               rm -f \
-                "rfp-markdown/generated/${stem}-final.md" \
-                "rfp-markdown/generated/${stem}-final.analysis.md" \
-                "rfp-markdown/generated/${stem}-final.issues.md" \
-                "rfp-markdown/generated/${stem}-final.scorecard.md" \
-                "rfp-markdown/generated/${stem}-final.executive-summary.md"
+                "${final_md%-final.md}-final.md" \
+                "${final_md%-final.md}-final.analysis.md" \
+                "${final_md%-final.md}-final.issues.md" \
+                "${final_md%-final.md}-final.scorecard.md" \
+                "${final_md%-final.md}-final.executive-summary.md"
               echo "pruned generated set for missing source: $src"
             fi
-          done
+          done < <(find rfp-markdown/generated -type f -name '*-final.md' | sort)
 
       - name: Snapshot generated outputs to LinkedIn archive
         if: steps.prep.outputs.target_count != '0'
@@ -548,7 +549,7 @@ jobs:
           copied=0
           while IFS= read -r target; do
             [[ -z "$target" ]] && continue
-            stem="$(basename "$target" .md)"
+            target_base="${target%.md}"
 
             for suffix in \
               "-final.md" \
@@ -556,7 +557,7 @@ jobs:
               "-final.issues.md" \
               "-final.scorecard.md" \
               "-final.executive-summary.md"; do
-              src="rfp-markdown/generated/${stem}${suffix}"
+              src="${target_base}${suffix}"
               if [[ -f "$src" ]]; then
                 cp "$src" "$SNAPSHOT_DIR/"
                 copied=$((copied + 1))
