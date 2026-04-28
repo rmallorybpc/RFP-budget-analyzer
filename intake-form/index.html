@@ -561,6 +561,10 @@
       display: inline-block;
     }
 
+    .success-action {
+      margin-top: 18px;
+    }
+
     /* ── FOOTER ── */
     footer {
       margin-top: 60px;
@@ -611,11 +615,15 @@
     <span class="success-mark">✓</span>
     <div class="success-title">Request Received</div>
     <p class="success-body">
-      Your RFP has been submitted successfully. MarketEdge will
-      deliver your analysis within three business days. Check your email
-      for confirmation details.
+      Submit your federal RFP for AI-powered analysis. Receive a company fit score,
+      PWS labor category mapping, and a GSA-based budget estimate within three
+      business days. To resubmit an updated RFP, rename the file before uploading
+      to ensure it is processed as a new submission.
     </p>
     <div class="success-id" id="successId"></div>
+    <button type="button" class="btn-submit success-action" id="submitAnotherBtn" onclick="window.location.reload()">
+      Submit Another RFP <span>→</span>
+    </button>
   </div>
 
   <!-- ── FORM ── -->
