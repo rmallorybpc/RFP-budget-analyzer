@@ -17,7 +17,7 @@ Prioritize findings that support:
 - Transition and mobilization risk: transition duration and funding treatment, right-of-first-refusal/incumbent hiring language, GFE/GFI/facility dependencies, clearance timeline feasibility, and key-personnel availability risk between submission and award
 - Questions for the Q&A period: high-value clarifications that resolve ambiguity, reduce incumbent advantage, signal technical credibility, clarify pricing assumptions (IGE, wage determination, ODC, fee), and reconcile contradictory solicitation language
 - Glossary of acronyms and terms: non-standard acronym definitions, program-specific terminology needing context, and references to predecessor programs, legacy contracts, or agency-specific systems
-- BD risk factors: unrealistic POP/transition schedule, vague evaluation criteria, unusual IP/data-rights terms, restrictive qualifications, short proposal window, geography/facility constraints, price methodology that may penalize technical quality
+- BD risk factors: include only RFP-specific risks tied to this solicitation's scope, unusual qualifications, evaluation language, timeline constraints, or competitive dynamics; cite the exact section/clause for each risk and exclude generic FAR/DFARS boilerplate that could appear in any federal RFP (routine format compliance warnings, standard termination language, standard reps/certs text, standard payment terms)
 - Win theme candidates: 3-5 potential themes that connect agency pain points to discriminating capabilities, including any hot-button issues called out in the solicitation
 
 Do not perform legal analysis.

@@ -32,7 +32,7 @@ Focus your review on whether the chunk analysis clearly covers:
 - Glossary of Acronyms and Terms completeness:
 	non-standard acronym definitions, program-specific terminology context, and predecessor-program or legacy-system references that affect proposal interpretation
 - BD Risk Factors and Win Theme Inputs:
-	evidence-backed timeline/evaluation/IP/qualification/geographic/price risks and traceable theme candidates tied to agency pain points
+		evidence-backed, RFP-specific timeline/evaluation/IP/qualification/geographic/price risks with explicit section or clause anchors; verify generic FAR/DFARS boilerplate is not elevated as a top BD issue (routine format compliance warnings, standard termination clauses, standard reps/certs language, standard payment terms)
 
 Flag unsupported claims, missing citations, and unclear requirement interpretations.
 Do not perform legal review.

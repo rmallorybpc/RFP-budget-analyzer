@@ -32,7 +32,7 @@ Include:
 - Glossary of Acronyms and Terms:
 	non-standard acronyms and definitions, program-specific terminology requiring context, and references to predecessor programs, legacy contracts, or agency-specific systems
 - BD Risk Factors:
-	unrealistic schedules, vague evaluation language, unusual IP/data-rights terms, restrictive qualifications, short response windows, geographic/facility constraints, and price-methodology disadvantages
+		unrealistic schedules, vague evaluation language, unusual IP/data-rights terms, restrictive qualifications, short response windows, geographic/facility constraints, and price-methodology disadvantages that are specific to this RFP; include section/clause anchors and exclude generic FAR/DFARS boilerplate that could appear in most federal solicitations unchanged
 - Win Theme candidates:
 	three to five candidate themes tied to evaluator priorities and agency pain points, plus solicitation hot-button issues to anchor narrative proof points
 - Recommended next actions for a BD team

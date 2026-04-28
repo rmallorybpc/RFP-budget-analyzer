@@ -127,6 +127,13 @@ Adjust for geographic location, clearance requirements, and specific GSA schedul
 | Contract Vehicle Access | 15% | Competitive vehicle path and dispatch priority advantages |
 | Team Capacity | 10% | Team size and key personnel against period of performance demands |
 
+Scoring rules (required):
+1. Score every dimension using requirement-to-capability delta analysis, not signal counting. Compare what the solicitation requires against what the company actually submitted in the profile inputs.
+2. For Technical Capability, explicitly cross-reference RFP technical requirements, mandatory qualifications, certifications, key personnel qualifications, and staffing requirements against the company profile under ## Submitted Company Profile in the markdown document (and Input 2 when provided separately).
+3. If the submitted profile shows shortfalls (for example fewer staff than required, missing certifications, or weak/no relevant past performance for required technical work), lower the score and flag the exact gap.
+4. For each scored dimension, list the specific RFP requirements evaluated (with section references) and the corresponding company evidence used to assign the score.
+5. Do not justify a score with phrasing such as "X positive signals" or "Y gap indicators" without showing the underlying requirement-to-submission comparison.
+
 Thresholds: 75–100 Strong Pursue. 60–74 Conditional Pursue. 45–59 Selective Pursue. Below 45 Pass.
 
 ---
@@ -246,6 +253,12 @@ Analysis Date: [Today's date]
 | Contract Vehicle Access | X/100 | 15% | X |
 | Team Capacity | X/100 | 10% | X |
 | **Overall** | | | **X/100** |
+
+[After the score table, add a "Dimension Scoring Evidence" subsection. For each dimension, include 2-6 bullets that each contain: (a) specific RFP requirement and section reference, (b) matching company-profile evidence or explicit absence, (c) effect on score (strength, partial, or gap).]
+
+[For Technical Capability, explicitly compare required technical capabilities, certifications, staffing/key personnel qualifications, and technical past-performance relevance against the submitted company profile. If evidence is missing or weaker than required, mark it as a gap and reflect that in the score rationale.]
+
+[If no profile evidence exists for a required item, write "No evidence in submitted company profile" and treat it as a scoring gap unless the RFP marks it optional.]
 
 ---
 
@@ -518,6 +531,12 @@ Analysis Date: [Today's date]
 ## BD Risk Factors
 
 [Provide evidence-backed BD risk bullets only. For each bullet include: risk statement, why it matters to bid/no-bid, and a mitigation action.]
+
+[Only include risks that are specific to this solicitation. Every risk bullet must cite a specific RFP section/clause and explain why this language creates a meaningful pursuit risk for this opportunity in particular.]
+
+[Exclude generic federal boilerplate from top BD issues. Do not elevate standard FAR/DFARS language that could appear in almost any RFP without modification, including routine format-compliance warnings, standard termination clauses, standard reps and certs language, and standard payment terms, unless the solicitation contains unusual deviations that create a specific risk.]
+
+[If a candidate risk could be copied unchanged into most federal solicitations, do not include it as a top BD risk. Prioritize scope-specific constraints, unusual qualifications, distinctive evaluation language, timeline/compression risks, incumbent-advantage signals, or other competitive dynamics unique to this RFP.]
 
 [Assess at minimum:]
 - Unrealistic POP or transition timeline relative to scope complexity
