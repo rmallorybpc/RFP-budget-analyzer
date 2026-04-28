@@ -336,7 +336,7 @@ jobs:
             if [[ -f "$prompt_file" ]]; then
               system_prompt="$(cat "$prompt_file")"
             else
-              system_prompt="You are a legal-markdown cleanup editor. Repair line-wrap artifacts and sentence breaks, preserve meaning, preserve markdown structure, and do not add new legal obligations."
+              system_prompt="You are an RFP-markdown cleanup editor. Repair line-wrap artifacts and sentence breaks, preserve meaning, preserve markdown structure, and do not add or infer requirements."
             fi
 
             local model endpoint
@@ -344,7 +344,7 @@ jobs:
             endpoint="${GITHUB_MODELS_ENDPOINT:-https://models.github.ai/inference/chat/completions}"
 
             local user_payload
-            user_payload="Clean and normalize this markdown. Fix mid-sentence breaks and hard wraps. Preserve headings, lists, and legal intent exactly. Return markdown only. If the source is too corrupted to safely repair without guessing, return exactly [[INCOMPREHENSIBLE_SOURCE]] and nothing else.\n\n--- BEGIN MARKDOWN ---\n$(cat "$in_file")\n--- END MARKDOWN ---"
+            user_payload="Clean and normalize this markdown. Fix mid-sentence breaks and hard wraps. Preserve headings, lists, and source intent exactly. Return markdown only. If the source is too corrupted to safely repair without guessing, return exactly [[INCOMPREHENSIBLE_SOURCE]] and nothing else.\n\n--- BEGIN MARKDOWN ---\n$(cat \"$in_file\")\n--- END MARKDOWN ---"
 
             jq -n \
               --arg model "$model" \

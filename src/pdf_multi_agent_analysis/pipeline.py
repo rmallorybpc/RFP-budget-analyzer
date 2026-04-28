@@ -131,11 +131,20 @@ RECOMMENDATION_BANDS: tuple[tuple[int, str], ...] = (
 )
 
 BD_ISSUE_BONUS_TERMS: tuple[tuple[tuple[str, ...], int], ...] = (
-    (("disqual", "ineligible", "mandatory", "must have"), 4),
+    (("disqual", "ineligible", "non-responsive", "unacceptable", "must have"), 6),
+    (("fail", "rejected", "not receive an award", "will not receive an award"), 5),
+    (("evaluation", "section m", "best value", "lpta", "tradeoff"), 4),
     (("incumbent", "brand-name", "sole source", "restricted"), 3),
     (("cost realism", "ceiling", "nte", "budget"), 3),
+    (("past performance", "cpars", "relevancy", "recency"), 3),
+    (("set-aside", "naics", "size standard", "small business"), 3),
     (("transition", "mobilization", "key personnel", "clearance"), 2),
     (("unclear", "ambiguous", "conflict", "contradict"), 2),
+)
+
+BD_ISSUE_PENALTY_TERMS: tuple[tuple[str, ...], ...] = (
+    ("incorporated by reference", "same force and effect", "computer generated forms"),
+    ("government will", "contractor shall"),
 )
 
 DEFAULT_FIRST_SECTION_HEADING = "Opportunity Scope"
@@ -856,19 +865,29 @@ def _build_contract_description(contract_type: str, analysis_report: str) -> lis
 
 def _score_issue_line(line: str) -> int:
     lowered = line.lower()
-    score = 1
+    score = 0
     for terms, points in BD_ISSUE_BONUS_TERMS:
         if any(term in lowered for term in terms):
             score += points
-    if any(term in lowered for term in ("shall", "must", "required", "mandatory")):
-        score += 1
+
+    # Promote concrete gate language above generic contract boilerplate.
+    if any(term in lowered for term in ("must", "required", "not receive", "rejected", "ineligible", "disqual")):
+        score += 2
+
+    if any(all(token in lowered for token in penalty_group) for penalty_group in BD_ISSUE_PENALTY_TERMS):
+        score -= 2
+
+    if len(lowered) < 40:
+        score -= 1
+
+    score = max(0, score)
     return score
 
 
 def _issue_risk_label(score: int) -> str:
-    if score >= 7:
+    if score >= 9:
         return "HIGH"
-    if score >= 4:
+    if score >= 5:
         return "MEDIUM"
     return "LOW"
 
