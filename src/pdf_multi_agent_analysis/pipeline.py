@@ -1266,6 +1266,59 @@ def _collect_issue_lines(issues_report: str) -> list[str]:
     return deduped
 
 
+def _build_user_friendly_issues_report(
+    report_title: str,
+    legal_risk_outputs: list[str],
+    procurement_type: str,
+) -> str:
+    raw_lines = [f"# BD Issues Summary: {report_title}", ""]
+    for output in legal_risk_outputs:
+        bullets = _extract_legal_risk_bullets(output)
+        if not bullets:
+            continue
+        raw_lines.append("Potential BD issues:")
+        raw_lines.extend(f"- {bullet}" for bullet in bullets)
+        raw_lines.append("")
+
+    actionable = _collect_issue_lines("\n".join(raw_lines))
+    scored = [
+        {
+            "text": issue,
+            "score": _score_issue_line_for_procurement(issue, procurement_type),
+        }
+        for issue in actionable
+    ]
+    scored.sort(key=lambda item: (item["score"], item["text"].lower()), reverse=True)
+
+    lines = [f"# BD Issues Summary: {report_title}", ""]
+    lines.append("## Capture Manager View")
+    if scored:
+        lines.append(
+            f"- {len(scored)} actionable BD issue signal(s) were detected in the solicitation text."
+        )
+        lines.append("- Prioritize HIGH and MEDIUM items that can affect compliance, staffing, schedule, and pricing.")
+    else:
+        lines.append("- No actionable BD issue signals were detected in the extracted solicitation text.")
+    lines.append("")
+
+    lines.append("## Potential BD issues")
+    lines.append("Potential BD issues:")
+    if scored:
+        lines.extend(f"- {item['text']}" for item in scored[:20])
+    else:
+        lines.append("- No actionable BD issues detected from the extracted solicitation text.")
+    lines.append("")
+
+    lines.append("## Priority shortlist")
+    if scored:
+        for i, item in enumerate(scored[:5], start=1):
+            lines.append(f"{i}. [{_issue_risk_label(item['score'])}] {item['text']}")
+    else:
+        lines.append("1. [LOW] No high-impact BD issues were identified.")
+
+    return "\n".join(lines).strip() + "\n"
+
+
 def _is_actionable_issue_line(text: str) -> bool:
     lowered = text.lower()
     if lowered.startswith("each project activity generates specific outputs"):
@@ -1756,7 +1809,7 @@ def _analyze_markdown(
     chunks = chunk_markdown(markdown, config.chunk_size_chars, config.overlap_chars)
     agents = [ExtractorAgent(), ReviewerAgent(), AnalystAgent(), LegalRiskAgent(), SynthesizerAgent()]
 
-    issues_lines = [f"# BD Issues Summary: {report_title}", ""]
+    legal_risk_outputs: list[str] = []
     statuses = asset_statuses or []
     section_buckets: dict[str, dict[str, list[str]]] = {}
     section_order: list[str] = []
@@ -1780,9 +1833,7 @@ def _analyze_markdown(
             result = agent.run(chunk, assets_context=assets_context)
             per_agent[result.agent_name] = result.content
             if result.agent_name == "legal-risk":
-                issues_lines.append(f"## Chunk {i}")
-                issues_lines.append(result.content)
-                issues_lines.append("")
+                legal_risk_outputs.append(result.content)
 
         extractor_output = _filter_pipeline_stage_lines(per_agent.get("extractor", ""))
         heading_candidate = _find_heading_candidate(extractor_output) or _find_heading_candidate(chunk)
@@ -1844,9 +1895,13 @@ def _analyze_markdown(
         assets_context=assets_context,
         asset_statuses=statuses,
     )
-    issues_report = "\n".join(issues_lines).strip() + "\n"
     source_hint = source_name or report_title
     procurement_type = _detect_procurement_type(markdown, source_hint)
+    issues_report = _build_user_friendly_issues_report(
+        report_title,
+        legal_risk_outputs,
+        procurement_type,
+    )
     capacity_signals = _derive_company_capacity_signals(markdown, source_hint)
     scorecard, overall_rating, _not_found_categories, score_rows = _build_scorecard(
         report,
