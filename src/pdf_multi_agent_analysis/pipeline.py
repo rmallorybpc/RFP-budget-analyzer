@@ -217,6 +217,148 @@ def _normalize_bullet_text(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def _truncate_at_word_boundary(text: str, limit: int) -> str:
+    normalized = _normalize_bullet_text(text)
+    if len(normalized) <= limit:
+        return normalized
+    window = normalized[:limit].rstrip()
+    cut = window.rfind(" ")
+    if cut >= max(40, int(limit * 0.6)):
+        return window[:cut].rstrip() + "..."
+    return window + "..."
+
+
+def _looks_like_far_clause_dump(text: str) -> bool:
+    normalized = _normalize_bullet_text(text)
+    if len(normalized) < 220:
+        return False
+    clause_hits = len(re.findall(r"\b52\.\d{3}-\d+\b", normalized))
+    return clause_hits >= 3
+
+
+def _contains_bd_decision_signal(text: str) -> bool:
+    lowered = _normalize_bullet_text(text).lower()
+    signal_terms = (
+        "award",
+        "evaluation",
+        "set-aside",
+        "small business",
+        "naics",
+        "past performance",
+        "technical evaluation",
+        "dispatch",
+        "price reasonableness",
+        "cost realism",
+        "incumbent",
+        "transition",
+        "mobilization",
+        "labor category",
+        "key personnel",
+        "ceiling",
+        "budget",
+        "ige",
+        "disqual",
+        "unacceptable",
+        "ranking",
+    )
+    return any(term in lowered for term in signal_terms)
+
+
+def _is_low_signal_finding(text: str) -> bool:
+    normalized = _normalize_bullet_text(text)
+    if not normalized:
+        return True
+
+    lowered = normalized.lower()
+    if _is_pipeline_stage_label(normalized):
+        return True
+
+    # Drop obvious extraction fragments and repetitive clause carryover.
+    if len(normalized) < 28:
+        return True
+    if re.match(r"^[A-Z]\.\d+\s*--\s*\|", normalized):
+        return True
+    if re.match(r"^\([a-z0-9]+\)\s", lowered):
+        return True
+    if normalized[0].islower():
+        return True
+    if "|" in normalized:
+        return True
+    if re.match(r"^[a-z]{1,3}\s", normalized) and _strip_leading_partial_word(normalized) != normalized:
+        return True
+    if _looks_like_far_clause_dump(normalized):
+        return True
+    if "incorporates one or more solicitation provisions by reference" in lowered:
+        return True
+    if not _contains_bd_decision_signal(normalized):
+        return True
+    return False
+
+
+def _summarize_finding_for_reader(text: str) -> str:
+    normalized = _normalize_bullet_text(text)
+    lowered = normalized.lower()
+
+    if "operational acceptability" in lowered and "price reasonableness" in lowered and "past performance" in lowered:
+        return "Award appears to be based on a three-part screen: operational acceptability, price reasonableness, and past performance dependability risk."
+
+    if "set-aside" in lowered and "small business" in lowered:
+        return "Set-aside language indicates award access may depend on small-business status and NAICS eligibility."
+
+    if "technical evaluation" in lowered and ("must pass" in lowered or "pass" in lowered):
+        return "A pass/fail technical evaluation gate appears before award consideration."
+
+    if "will not receive an award" in lowered or "may be found unacceptable" in lowered or "rejected" in lowered:
+        return "The solicitation includes explicit disqualification language for non-compliant technical submissions."
+
+    if "dispatch" in lowered and "lowest price" in lowered:
+        return "Dispatch priority appears to favor lower-priced offers within category constraints."
+
+    if "socioeconomic" in lowered and "advantage" in lowered:
+        return "Socioeconomic status appears to influence dispatch ranking, which can affect win probability after award."
+
+    if "incident" in lowered and "host agency" in lowered:
+        return "Order execution and invoicing may vary by host agency, so performance operations should plan for multi-agency administration."
+
+    if "will not receive pay" in lowered or ("demobilized" in lowered and "cannot become compliant" in lowered):
+        return "Non-compliant resources may be demobilized without pay, creating a direct execution and financial risk if readiness checks are weak."
+
+    if "ordering procedures" in lowered and "mobilization guides" in lowered:
+        return "Ordering appears tied to national and regional mobilization guides, so dispatch operations should be aligned before kickoff."
+
+    if "dispatch ranking" in lowered and "may not be used" in lowered:
+        return "Dispatch ranking may not always apply for prescribed project work, which can reduce predictability of assignment volume."
+
+    if "award evaluation factors" in lowered and "dispatch priority" in lowered:
+        return "Award evaluation and dispatch-priority criteria appear linked for some resource categories, so pricing and capability positioning should be coordinated."
+
+    return ""
+
+
+def _rewrite_pipeline_jargon(text: str) -> str:
+    rewritten = _normalize_bullet_text(text)
+    replacements: tuple[tuple[str, str], ...] = (
+        ("cross-chunk synthesis", "full-document synthesis"),
+        ("Classify this chunk as pursue, conditional pursue, or pass based on bid-impact evidence.", "Set a preliminary bid posture (pursue, conditional pursue, or pass) based on the evidence in this section."),
+        ("chunk", "solicitation section"),
+        ("decision-neutral in isolation", "not decisive on its own"),
+        ("Classify this chunk", "Classify this solicitation section"),
+    )
+    for old, new in replacements:
+        rewritten = re.sub(re.escape(old), new, rewritten, flags=re.IGNORECASE)
+    return rewritten
+
+
+def _is_reader_friendly_duplicate(existing: list[str], candidate: str) -> bool:
+    canonical = _canonicalize_bullet_text(candidate)
+    if not canonical:
+        return True
+    for item in existing:
+        if _are_near_duplicate_bullets(item, candidate):
+            return True
+    return False
+
+
 def _canonicalize_exact_clause_text(text: str) -> str:
     # Exact-match dedupe key for legal clause extracts: case-insensitive + trim-only.
     return text.strip().lower()
@@ -661,17 +803,37 @@ def _build_sectioned_analysis_report(
 
         lines.append(f"## {section_name}")
         lines.append("")
-        lines.append("### BD Findings")
-        if legal_risks:
-            for risk in legal_risks:
-                lines.append(f"- {risk}")
+        lines.append("### What Matters for Your Team")
+        reader_findings: list[str] = []
+        has_clause_digest = False
+        for risk in legal_risks:
+            if _looks_like_far_clause_dump(risk):
+                has_clause_digest = True
+                continue
+            if _is_low_signal_finding(risk):
+                continue
+            summarized = _summarize_finding_for_reader(risk)
+            if not summarized or _is_reader_friendly_duplicate(reader_findings, summarized):
+                continue
+            reader_findings.append(summarized)
+            if len(reader_findings) >= 8:
+                break
+
+        if has_clause_digest:
+            reader_findings.append(
+                "A large block of standard FAR clauses is present; prioritize review of deviations and requirement-specific clauses over baseline boilerplate."
+            )
+
+        if reader_findings:
+            for finding in reader_findings:
+                lines.append(f"- {finding}")
         else:
-            lines.append("- No explicit BD gate signals were identified in this section.")
+            lines.append("- No high-confidence BD decision signals were detected in this section.")
 
         lines.append("")
         section_takeaways: list[str] = []
         for takeaway in takeaways:
-            normalized = _normalize_bullet_text(takeaway)
+            normalized = _rewrite_pipeline_jargon(takeaway)
             if not normalized:
                 continue
             if any(_are_near_duplicate_bullets(existing, normalized) for existing in section_takeaways):
@@ -687,7 +849,7 @@ def _build_sectioned_analysis_report(
         lines.append("")
         section_actions: list[str] = []
         for action in actions:
-            normalized = _normalize_bullet_text(action)
+            normalized = _rewrite_pipeline_jargon(action)
             if not normalized:
                 continue
             if any(_are_near_duplicate_bullets(existing, normalized) for existing in section_actions):

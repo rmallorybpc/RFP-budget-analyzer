@@ -1,11 +1,11 @@
 ## Bid or No-Bid Snapshot
 - Opportunity: RFP REMS_11-final
-- Analysis run date: 2026-04-28
+- Analysis run date: 2026-04-29
 - Recommendation: Conditional Pursue
-- Overall BD fit score: 67.8/100
+- Overall BD fit score: 71.8/100
 
 ## Strongest Alignment
-- Team Capacity: 85/100. Signals found: 12 positive and 0 gap/risk indicators for team capacity.
+- Team Capacity: 85/100. Signals found: 8 positive and 0 gap/risk indicators for team capacity.
 
 ## Critical Gap
 - Technical Capability: 61/100. Signals found: 2 positive and 0 gap/risk indicators for technical capability.
