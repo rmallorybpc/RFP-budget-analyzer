@@ -33,20 +33,20 @@
 #
 # USAGE INSTRUCTIONS
 # ──────────────────
-# 1. Open the Stage D refined markdown from rfp-markdown/generated/
-# 2. Open submission metadata from rfp-pdfs/SUBMISSION_ID/submission-metadata.json
-# 3. Pull company capability inputs from the admin dashboard KV record
-# 4. Replace all {{PLACEHOLDER}} blocks below with actual content
-# 5. Run this prompt in Claude (claude.ai) or GitHub Models
-# 6. Save output as rfp-markdown/generated/SUBMISSION_ID-capture-brief.md
-# 7. Update submission status to "Ready for Review" in admin dashboard
+# 1. Use the full Stage D refined markdown document from rfp-markdown/generated/ as the single source document for this prompt.
+# 2. Extract all RFP and company values directly from that document, including the appended ## Submitted Company Profile section.
+# 3. Do not wait for or request manual field replacement before running.
+# 4. If a required value is missing, write "Not stated in provided text" and continue.
+# 5. Run this prompt in Claude (claude.ai) or GitHub Models.
+# 6. Save output as rfp-markdown/generated/{extracted-submission-id-or-source-stem}-capture-brief.md.
+# 7. Update submission status to "Ready for Review" in admin dashboard.
 #
 # OUTPUT QUALITY NOTE:
 # Section 16 (Custom Past Performance Statements) scales directly with
 # the quality and detail of the company's past performance input.
 # If the submission's past performance summary is thin, the model will
-# produce templated statements with bracketed placeholders. Flag this
-# to the company and request richer input before finalizing.
+# produce lower-confidence statements. Flag this explicitly and list
+# the exact missing fields needed to strengthen the final narrative.
 #
 # When automating in full product: this becomes a workflow_dispatch
 # triggered automatically after Stage D completes, reading inputs
@@ -69,28 +69,28 @@ Your task is to produce a complete Capture Intelligence Brief in the exact forma
 ---
 
 ## INPUT 1 — RFP ANALYSIS
-(Paste the full contents of the Stage D refined markdown output here)
+(The full Stage D refined markdown document under analysis is provided as the source text for this run. Use that entire document as Input 1.)
 
 ```
-{{RFP_ANALYSIS_CONTENT}}
+Use the complete provided markdown document as the analysis source.
 ```
 
 ---
 
 ## INPUT 2 — COMPANY CAPABILITY PROFILE
 
-Company Name: {{COMPANY_NAME}}
-Contact: {{CONTACT_NAME}}
-Email: {{CONTACT_EMAIL}}
-Submission ID: {{SUBMISSION_ID}}
-Submitted: {{SUBMITTED_AT}}
+Company Name: Extract from the company identity heading in ## Submitted Company Profile (typically the first heading under that section).
+Contact: Extract from the contact block in ## Submitted Company Profile.
+Email: Extract from the contact block in ## Submitted Company Profile.
+Submission ID: Extract from submission metadata in the provided markdown document (or write "Not stated in provided text").
+Submitted: Extract from submission metadata timestamp in the provided markdown document (or write "Not stated in provided text").
 
-NAICS Codes: {{NAICS_CODES}}
-Certifications: {{CERTIFICATIONS}}
-Contract Vehicles: {{CONTRACT_VEHICLES}}
-Past Performance Summary: {{PAST_PERFORMANCE}}
-Team Size: {{TEAM_SIZE}}
-Key Personnel: {{KEY_PERSONNEL}}
+NAICS Codes: Extract from ## NAICS Codes in ## Submitted Company Profile.
+Certifications: Extract from ## Certifications Held in ## Submitted Company Profile.
+Contract Vehicles: Extract from ## Contract Vehicles in ## Submitted Company Profile (or write "Not stated in provided text" if absent).
+Past Performance Summary: Extract from ## Past Performance Summary in ## Submitted Company Profile.
+Team Size: Extract from ## Team Size in ## Submitted Company Profile.
+Key Personnel: Extract from ## Key Personnel in ## Submitted Company Profile.
 
 ---
 
@@ -169,10 +169,10 @@ Final output guardrails (required):
 ---
 
 # Capture Intelligence Brief
-**{{COMPANY_NAME}}**
+**Use extracted company name from ## Submitted Company Profile**
 Prepared by MarketEdge RFP Budget Analyzer
-Submission ID: {{SUBMISSION_ID}}
-Analysis Date: [Today's date]
+Submission ID: Use extracted submission ID from the provided markdown document (or "Not stated in provided text")
+Analysis Date: Use today's date
 
 ## BD Opportunity Assessment (Bid/No-Bid Gate Review)
 
@@ -601,7 +601,7 @@ Placement: [Proposal placement]
 - Quantified outcomes wherever the submitted profile provides data
 - Closing sentence connecting this experience to a specific requirement in the current RFP
 
-If the company's past performance summary lacks sufficient detail for specific statements, produce a template with [BRACKETED PLACEHOLDERS] and flag this explicitly in the Past Performance Quality Note below.]
+If the company's past performance summary lacks sufficient detail for specific statements, provide a concise missing-information template that lists exactly which fields are absent (for example: contract number, dollar value, period of performance, quantified outcomes, customer POC) and flag this explicitly in the Past Performance Quality Note below.]
 
 **Past Performance Statement 1:**
 [Draft statement or templated version with bracketed placeholders]
@@ -669,7 +669,7 @@ This brief was generated by the MarketEdge RFP Budget Analyzer using AI-assisted
 # [ ] Submission ID matches KV record
 # [ ] Company name spelled correctly throughout
 # [ ] Zero instances of "The Mallory Group" or "TMG" in output
-# [ ] All {{PLACEHOLDER}} values replaced — search for {{ to confirm none remain
+# [ ] No manual placeholder tokens remain in the generated brief; all values were derived from the provided markdown document
 # [ ] Compliance matrix has minimum 15 rows
 # [ ] Win theme proof points reference specific company profile content
 # [ ] Past performance statements use RFP evaluation criteria language
@@ -680,7 +680,7 @@ This brief was generated by the MarketEdge RFP Budget Analyzer using AI-assisted
 # [ ] Past Performance Quality Note is honest — thin input flagged clearly
 #
 # FILE MANAGEMENT:
-# [ ] Save output as: rfp-markdown/generated/SUBMISSION_ID-capture-brief.md
+# [ ] Save output as: rfp-markdown/generated/{extracted-submission-id-or-source-stem}-capture-brief.md
 # [ ] Update KV status to "Ready for Review" via admin dashboard
 # [ ] Read the brief once as the company's capture manager receiving it
 # [ ] Confirm no checklist items or internal notes visible in final output
