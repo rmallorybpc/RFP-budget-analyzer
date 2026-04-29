@@ -147,21 +147,70 @@ jobs:
 
           # Assets are preprocessed in a dedicated cache step and appended to this context file.
 
-      - name: Detect procurement type from markdown metadata
+      - name: Detect procurement type from markdown and submission context
         if: steps.prep.outputs.target_count != '0'
         run: |
           set -euo pipefail
+
+          detect_procurement_type_for_file() {
+            local in_file="$1"
+            local comment_type=""
+            local profile_type=""
+            local metadata_type=""
+
+            if [[ ! -f "$in_file" ]]; then
+              echo "us-federal"
+              return 0
+            fi
+
+            comment_type="$(head -n 5 "$in_file" | sed -n 's/^[[:space:]]*<!-- procurement-type: \(.*\) -->[[:space:]]*$/\1/p' | head -n 1 | tr '[:upper:]' '[:lower:]' | xargs)"
+            if [[ "$comment_type" != "us-federal" && "$comment_type" != "intl-dev" && "$comment_type" != "other" ]]; then
+              comment_type=""
+            fi
+
+            profile_line="$(grep -im1 '^\*\*Procurement Type:\*\*' "$in_file" || true)"
+            profile_value="$(printf '%s\n' "$profile_line" | sed -E 's/^\*\*Procurement Type:\*\*[[:space:]]*//I' | tr '[:upper:]' '[:lower:]' | xargs)"
+            case "$profile_value" in
+              *international*development*|*intl*dev*)
+                profile_type="intl-dev"
+                ;;
+              *us*federal*|*far*)
+                profile_type="us-federal"
+                ;;
+              *other*|*commercial*)
+                profile_type="other"
+                ;;
+            esac
+
+            if [[ "$in_file" =~ /sub_[0-9]+/ ]]; then
+              submission_id="$(printf '%s' "$in_file" | sed -n 's|.*\(sub_[0-9][0-9]*\).*|\1|p' | head -n 1)"
+              metadata_file="rfp-pdfs/${submission_id}/submission-metadata.json"
+              if [[ -f "$metadata_file" ]]; then
+                metadata_type="$(jq -r '.procurementType // ""' "$metadata_file" 2>/dev/null | tr '[:upper:]' '[:lower:]' | xargs)"
+                if [[ "$metadata_type" != "us-federal" && "$metadata_type" != "intl-dev" && "$metadata_type" != "other" ]]; then
+                  metadata_type=""
+                fi
+              fi
+            fi
+
+            if [[ "$profile_type" == "intl-dev" || "$metadata_type" == "intl-dev" ]]; then
+              echo "intl-dev"
+            elif [[ -n "$profile_type" ]]; then
+              echo "$profile_type"
+            elif [[ -n "$comment_type" ]]; then
+              echo "$comment_type"
+            elif [[ -n "$metadata_type" ]]; then
+              echo "$metadata_type"
+            else
+              echo "us-federal"
+            fi
+          }
 
           target_file="$(head -n 1 .tmp/targets.txt || true)"
           procurement_type="us-federal"
 
           if [[ -n "$target_file" && -f "$target_file" ]]; then
-            detected="$(head -n 5 "$target_file" | sed -n 's/^<!-- procurement-type: \(.*\) -->$/\1/p' | head -n 1 | tr '[:upper:]' '[:lower:]' | xargs)"
-            case "$detected" in
-              us-federal|intl-dev|other)
-                procurement_type="$detected"
-                ;;
-            esac
+            procurement_type="$(detect_procurement_type_for_file "$target_file")"
           fi
 
           echo "PROCUREMENT_TYPE=$procurement_type" >> "$GITHUB_ENV"
@@ -421,22 +470,60 @@ jobs:
 
           detect_procurement_type() {
             local in_file="$1"
-            local raw=""
+            local comment_type=""
+            local profile_type=""
+            local metadata_type=""
+            local submission_id=""
+            local metadata_file=""
+            local profile_line=""
+            local profile_value=""
 
             if [[ ! -f "$in_file" ]]; then
               echo "us-federal"
               return 0
             fi
 
-            raw="$(head -n 5 "$in_file" | sed -n 's/^[[:space:]]*<!-- procurement-type: \(.*\) -->[[:space:]]*$/\1/p' | head -n 1 | tr '[:upper:]' '[:lower:]' | xargs)"
-            case "$raw" in
-              us-federal|intl-dev|other)
-                echo "$raw"
+            comment_type="$(head -n 5 "$in_file" | sed -n 's/^[[:space:]]*<!-- procurement-type: \(.*\) -->[[:space:]]*$/\1/p' | head -n 1 | tr '[:upper:]' '[:lower:]' | xargs)"
+            if [[ "$comment_type" != "us-federal" && "$comment_type" != "intl-dev" && "$comment_type" != "other" ]]; then
+              comment_type=""
+            fi
+
+            profile_line="$(grep -im1 '^\*\*Procurement Type:\*\*' "$in_file" || true)"
+            profile_value="$(printf '%s\n' "$profile_line" | sed -E 's/^\*\*Procurement Type:\*\*[[:space:]]*//I' | tr '[:upper:]' '[:lower:]' | xargs)"
+            case "$profile_value" in
+              *international*development*|*intl*dev*)
+                profile_type="intl-dev"
                 ;;
-              *)
-                echo "us-federal"
+              *us*federal*|*far*)
+                profile_type="us-federal"
+                ;;
+              *other*|*commercial*)
+                profile_type="other"
                 ;;
             esac
+
+            if [[ "$in_file" =~ /sub_[0-9]+/ ]]; then
+              submission_id="$(printf '%s' "$in_file" | sed -n 's|.*\(sub_[0-9][0-9]*\).*|\1|p' | head -n 1)"
+              metadata_file="rfp-pdfs/${submission_id}/submission-metadata.json"
+              if [[ -f "$metadata_file" ]]; then
+                metadata_type="$(jq -r '.procurementType // ""' "$metadata_file" 2>/dev/null | tr '[:upper:]' '[:lower:]' | xargs)"
+                if [[ "$metadata_type" != "us-federal" && "$metadata_type" != "intl-dev" && "$metadata_type" != "other" ]]; then
+                  metadata_type=""
+                fi
+              fi
+            fi
+
+            if [[ "$profile_type" == "intl-dev" || "$metadata_type" == "intl-dev" ]]; then
+              echo "intl-dev"
+            elif [[ -n "$profile_type" ]]; then
+              echo "$profile_type"
+            elif [[ -n "$comment_type" ]]; then
+              echo "$comment_type"
+            elif [[ -n "$metadata_type" ]]; then
+              echo "$metadata_type"
+            else
+              echo "us-federal"
+            fi
           }
 
           write_final_with_last_run() {

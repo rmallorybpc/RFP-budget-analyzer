@@ -236,27 +236,43 @@ jobs:
           DEST_DIR="rfp-pdfs/${SUBMISSION_ID}"
           METADATA_PATH="${DEST_DIR}/submission-metadata.json"
 
-          cat > "${METADATA_PATH}" << EOF
-          {
-            "submissionId":  "${SUBMISSION_ID}",
-            "company":       "${COMPANY}",
-            "contact":       "${CONTACT}",
-            "email":         "${EMAIL}",
-            "procurementType": "${PROCUREMENT_TYPE}",
-            "rfpFileName":   "${RFP_FILENAME}",
-            "submittedAt":   "${SUBMITTED_AT}",
-            "naics":         "${NAICS}",
-            "certifications": "${CERTIFICATIONS}",
-            "contractVehicles": "${CONTRACT_VEHICLES}",
-            "donor":         "${DONOR}",
-            "sector":        "${SECTOR}",
-            "managingContractor": "${MANAGING_CONTRACTOR}",
-            "pastPerformance": "${PAST_PERFORMANCE}",
-            "teamSize":      "${TEAM_SIZE}",
-            "keyPersonnel":  "${KEY_PERSONNEL}",
-            "workflowRunId": "${GITHUB_RUN_ID}"
-          }
-          EOF
+          jq -n \
+            --arg submissionId "$SUBMISSION_ID" \
+            --arg company "$COMPANY" \
+            --arg contact "$CONTACT" \
+            --arg email "$EMAIL" \
+            --arg procurementType "$PROCUREMENT_TYPE" \
+            --arg rfpFileName "$RFP_FILENAME" \
+            --arg submittedAt "$SUBMITTED_AT" \
+            --arg naics "$NAICS" \
+            --arg certifications "$CERTIFICATIONS" \
+            --arg contractVehicles "$CONTRACT_VEHICLES" \
+            --arg donor "$DONOR" \
+            --arg sector "$SECTOR" \
+            --arg managingContractor "$MANAGING_CONTRACTOR" \
+            --arg pastPerformance "$PAST_PERFORMANCE" \
+            --arg teamSize "$TEAM_SIZE" \
+            --arg keyPersonnel "$KEY_PERSONNEL" \
+            --arg workflowRunId "$GITHUB_RUN_ID" \
+            '{
+              submissionId: $submissionId,
+              company: $company,
+              contact: $contact,
+              email: $email,
+              procurementType: $procurementType,
+              rfpFileName: $rfpFileName,
+              submittedAt: $submittedAt,
+              naics: $naics,
+              certifications: $certifications,
+              contractVehicles: $contractVehicles,
+              donor: $donor,
+              sector: $sector,
+              managingContractor: $managingContractor,
+              pastPerformance: $pastPerformance,
+              teamSize: $teamSize,
+              keyPersonnel: $keyPersonnel,
+              workflowRunId: $workflowRunId
+            }' > "${METADATA_PATH}"
 
           echo "Metadata written to ${METADATA_PATH}"
           cat "${METADATA_PATH}"

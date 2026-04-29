@@ -15,7 +15,7 @@ from .converter import pdf_to_markdown
 FINAL_OUTPUT_DIR = Path("rfp-markdown/generated")
 AUDIT_ROOT_DIR = Path("rfp-markdown/audit")
 
-BD_SCORE_DIMENSIONS: list[dict[str, object]] = [
+BD_SCORE_DIMENSIONS_US: list[dict[str, object]] = [
     {
         "name": "Technical Capability",
         "weight": 30,
@@ -124,6 +124,112 @@ BD_SCORE_DIMENSIONS: list[dict[str, object]] = [
     },
 ]
 
+BD_SCORE_DIMENSIONS_INTL: list[dict[str, object]] = [
+    {
+        "name": "Donor and Funder Alignment",
+        "weight": 20,
+        "positive_terms": (
+            "donor",
+            "funder",
+            "dfat",
+            "rt4d",
+            "program proponent",
+        ),
+        "negative_terms": (
+            "not stated",
+            "unclear",
+            "tbd",
+            "gap",
+        ),
+    },
+    {
+        "name": "Managing Contractor and Delivery Context",
+        "weight": 15,
+        "positive_terms": (
+            "managing contractor",
+            "tetra tech",
+            "asec",
+            "cts",
+            "coordination",
+        ),
+        "negative_terms": (
+            "ambiguous",
+            "unclear",
+            "conflict",
+            "not stated",
+        ),
+    },
+    {
+        "name": "GEDSI and Inclusion Fit",
+        "weight": 20,
+        "positive_terms": (
+            "gedsi",
+            "women",
+            "msmes",
+            "disability",
+            "inclusion",
+            "do no harm",
+        ),
+        "negative_terms": (
+            "underrepresented",
+            "barrier",
+            "risk",
+            "limited participation",
+        ),
+    },
+    {
+        "name": "Donor Compliance and Safeguarding",
+        "weight": 20,
+        "positive_terms": (
+            "pseah",
+            "child protection",
+            "dfat",
+            "safeguarding",
+            "confidentiality",
+        ),
+        "negative_terms": (
+            "non-compliance",
+            "breach",
+            "not comply",
+            "missing",
+        ),
+    },
+    {
+        "name": "Budget and Person-Days Feasibility",
+        "weight": 15,
+        "positive_terms": (
+            "person days",
+            "value for money",
+            "financial proposal",
+            "budget",
+            "remuneration framework",
+        ),
+        "negative_terms": (
+            "cost risk",
+            "budget not disclosed",
+            "overrun",
+            "under-resourced",
+        ),
+    },
+    {
+        "name": "Team Requirements and ToR Fit",
+        "weight": 10,
+        "positive_terms": (
+            "section xi",
+            "annex a",
+            "technical soundness",
+            "evaluation criteria",
+            "key personnel",
+        ),
+        "negative_terms": (
+            "ineligible",
+            "disqual",
+            "must have",
+            "required",
+        ),
+    },
+]
+
 RECOMMENDATION_BANDS: tuple[tuple[int, str], ...] = (
     (75, "Strong Pursue"),
     (60, "Conditional Pursue"),
@@ -143,12 +249,53 @@ BD_ISSUE_BONUS_TERMS: tuple[tuple[tuple[str, ...], int], ...] = (
     (("unclear", "ambiguous", "conflict", "contradict"), 2),
 )
 
+BD_ISSUE_BONUS_TERMS_INTL: tuple[tuple[tuple[str, ...], int], ...] = (
+    (("disqual", "ineligible", "non-responsive", "must have", "required"), 6),
+    (("technical soundness", "value for money", "evaluation criteria"), 5),
+    (("donor", "funder", "dfat", "rt4d", "tetra tech"), 4),
+    (("pseah", "child protection", "do no harm", "safeguarding"), 4),
+    (("gedsi", "women", "msmes", "disability", "inclusion"), 3),
+    (("person days", "budget", "financial proposal", "remuneration"), 3),
+    (("section xi", "annex a", "selection criteria", "timeline"), 2),
+)
+
 BD_ISSUE_PENALTY_TERMS: tuple[tuple[str, ...], ...] = (
     ("incorporated by reference", "same force and effect", "computer generated forms"),
     ("government will", "contractor shall"),
 )
 
 DEFAULT_FIRST_SECTION_HEADING = "Opportunity Scope"
+
+ACTIONABLE_ISSUE_TERMS: tuple[str, ...] = (
+    "must",
+    "required",
+    "shall",
+    "evaluation",
+    "criteria",
+    "deadline",
+    "closing date",
+    "submission",
+    "budget",
+    "person days",
+    "compliance",
+    "eligibility",
+    "qualification",
+    "experience",
+    "technical soundness",
+    "value for money",
+    "team",
+    "key personnel",
+    "donor",
+    "dfat",
+    "gedsi",
+    "pseah",
+    "child protection",
+    "ineligible",
+    "disqual",
+    "rejected",
+    "section xi",
+    "annex a",
+)
 
 PIPELINE_STAGE_LABELS: tuple[str, ...] = (
     "Stage C Final Markdown",
@@ -1027,9 +1174,17 @@ def _build_contract_description(contract_type: str, analysis_report: str) -> lis
 
 
 def _score_issue_line(line: str) -> int:
+    return _score_issue_line_for_procurement(line, "us-federal")
+
+
+def _score_issue_line_for_procurement(line: str, procurement_type: str) -> int:
     lowered = line.lower()
     score = 0
-    for terms, points in BD_ISSUE_BONUS_TERMS:
+    term_bonuses = BD_ISSUE_BONUS_TERMS
+    if procurement_type == "intl-dev":
+        term_bonuses = BD_ISSUE_BONUS_TERMS_INTL
+
+    for terms, points in term_bonuses:
         if any(term in lowered for term in terms):
             score += points
 
@@ -1056,17 +1211,50 @@ def _issue_risk_label(score: int) -> str:
 
 
 def _collect_issue_lines(issues_report: str) -> list[str]:
-    lines = [ln.strip() for ln in issues_report.splitlines()]
+    lines = [ln.rstrip() for ln in issues_report.splitlines()]
     collected: list[str] = []
-    for line in lines:
-        if line.startswith("- "):
-            collected.append(line[2:].strip())
-        elif line and not line.startswith("#") and line.lower() not in (
+    in_bd_issues_block = False
+    for raw_line in lines:
+        line = raw_line.strip()
+        lower_line = line.lower()
+
+        if line.startswith("## "):
+            in_bd_issues_block = False
+            continue
+
+        if lower_line == "potential bd issues:":
+            in_bd_issues_block = True
+            continue
+
+        if lower_line in (
             "potential obligations/risks:",
-            "potential bd issues:",
             "no explicit bd gate signals were detected in this chunk.",
+            "",
         ):
-            collected.append(line)
+            continue
+
+        if not in_bd_issues_block:
+            continue
+
+        if not line.startswith("- "):
+            continue
+
+        candidate = line[2:].strip()
+        candidate = re.sub(r"^[•●]\s*", "", candidate)
+        candidate = re.sub(r"\s+", " ", candidate).strip()
+        if not candidate:
+            continue
+        if candidate.startswith("#"):
+            continue
+        if re.fullmatch(r"(?i)(past performance summary|key personnel|team size|company name)", candidate):
+            continue
+        if len(candidate) < 30:
+            continue
+        if not _is_actionable_issue_line(candidate):
+            continue
+
+        collected.append(_condense_issue_text(candidate))
+
     deduped: list[str] = []
     seen: set[str] = set()
     for line in collected:
@@ -1076,6 +1264,82 @@ def _collect_issue_lines(issues_report: str) -> list[str]:
         seen.add(key)
         deduped.append(line)
     return deduped
+
+
+def _is_actionable_issue_line(text: str) -> bool:
+    lowered = text.lower()
+    if lowered.startswith("each project activity generates specific outputs"):
+        return False
+    if lowered.startswith("monitoring and evaluation (note:"):
+        return False
+    if lowered.startswith("regular tracking of sex-disaggregated"):
+        return False
+    if lowered.startswith("strong understanding of and ability to operationalise"):
+        return False
+    return any(term in lowered for term in ACTIONABLE_ISSUE_TERMS)
+
+
+def _condense_issue_text(text: str, max_len: int = 220) -> str:
+    cleaned = re.sub(r"\s+", " ", text).strip(" -;,.\t")
+    if len(cleaned) <= max_len:
+        return cleaned
+
+    truncated = cleaned[:max_len]
+    split_pos = max(truncated.rfind(". "), truncated.rfind("; "), truncated.rfind(", "))
+    if split_pos >= 80:
+        truncated = truncated[:split_pos]
+    return truncated.rstrip(" ,;.") + "..."
+
+
+def _normalize_procurement_type(raw: str) -> str:
+    value = (raw or "").strip().lower()
+    if value in ("us-federal", "intl-dev", "other"):
+        return value
+    return ""
+
+
+def _extract_procurement_type_from_comment(markdown_text: str) -> str:
+    match = re.search(r"^\s*<!-- procurement-type: (.+?) -->\s*$", markdown_text, flags=re.IGNORECASE | re.MULTILINE)
+    if not match:
+        return ""
+    return _normalize_procurement_type(match.group(1))
+
+
+def _extract_procurement_type_from_profile(markdown_text: str) -> str:
+    profile = _extract_company_profile_section(markdown_text)
+    if not profile:
+        return ""
+
+    match = re.search(r"\*\*\s*Procurement Type:\s*\*\*\s*([^\n]+)", profile, flags=re.IGNORECASE)
+    if not match:
+        return ""
+
+    label = match.group(1).strip().lower()
+    if "international development" in label or "intl" in label:
+        return "intl-dev"
+    if "us federal" in label or "far" in label:
+        return "us-federal"
+    if "other" in label or "commercial" in label:
+        return "other"
+    return ""
+
+
+def _detect_procurement_type(markdown_text: str, source_name: str) -> str:
+    comment_type = _extract_procurement_type_from_comment(markdown_text)
+    profile_type = _extract_procurement_type_from_profile(markdown_text)
+    metadata_type = _normalize_procurement_type(_read_submission_metadata_for_source(source_name).get("procurementType", ""))
+
+    # Prefer profile and metadata over a stale comment when they agree on intl-dev.
+    if profile_type == "intl-dev" or metadata_type == "intl-dev":
+        return "intl-dev"
+
+    return profile_type or comment_type or metadata_type or "us-federal"
+
+
+def _score_dimensions_for_procurement(procurement_type: str) -> list[dict[str, object]]:
+    if procurement_type == "intl-dev":
+        return BD_SCORE_DIMENSIONS_INTL
+    return BD_SCORE_DIMENSIONS_US
 
 
 def _extract_company_profile_section(markdown_text: str) -> str:
@@ -1262,6 +1526,7 @@ def _team_capacity_cap_from_profile(signals: dict[str, str | int]) -> tuple[int 
 def _build_scorecard(
     analysis_report: str,
     issues_report: str,
+    procurement_type: str = "us-federal",
     company_capacity_signals: dict[str, str | int] | None = None,
 ) -> tuple[str, str, list[str], list[dict[str, str]]]:
     core_analysis = _strip_reference_sections(analysis_report)
@@ -1270,7 +1535,7 @@ def _build_scorecard(
     score_rows: list[dict[str, str]] = []
     capacity_signals = company_capacity_signals or {}
 
-    for dimension in BD_SCORE_DIMENSIONS:
+    for dimension in _score_dimensions_for_procurement(procurement_type):
         dimension_name = str(dimension["name"])
         weight = int(dimension["weight"])
         positive_terms = tuple(str(term) for term in dimension["positive_terms"])
@@ -1330,7 +1595,7 @@ def _build_scorecard(
     scored_issues = [
         {
             "text": line,
-            "score": _score_issue_line(line),
+            "score": _score_issue_line_for_procurement(line, procurement_type),
         }
         for line in _collect_issue_lines(issues_report)
     ]
@@ -1338,12 +1603,15 @@ def _build_scorecard(
     top_issues = [
         {
             "risk": _issue_risk_label(item["score"]),
-            "text": item["text"],
+            "text": _condense_issue_text(item["text"]),
         }
         for item in scored_issues[:3]
     ]
 
     lines = [f"Overall BD fit score: {overall_score:.1f}/100 - {recommendation}", ""]
+    if procurement_type == "intl-dev":
+        lines.append("Procurement context: International Development")
+        lines.append("")
     lines.append("| Dimension | Score | Weight | Weighted Score | Confidence | Rationale |")
     lines.append("| --- | --- | --- | --- | --- | --- |")
     for row in score_rows:
@@ -1357,7 +1625,7 @@ def _build_scorecard(
         for i, issue in enumerate(top_issues, start=1):
             lines.append(f"{i}. [{issue['risk']}] {issue['text']}")
     else:
-        lines.append("1. [LOW] No explicit BD issue lines were detected in the issues summary.")
+        lines.append("1. [LOW] No actionable BD issue lines were detected in the issues summary.")
 
     scorecard = "\n".join(lines).strip() + "\n"
     return scorecard, recommendation, [], score_rows
@@ -1578,10 +1846,12 @@ def _analyze_markdown(
     )
     issues_report = "\n".join(issues_lines).strip() + "\n"
     source_hint = source_name or report_title
+    procurement_type = _detect_procurement_type(markdown, source_hint)
     capacity_signals = _derive_company_capacity_signals(markdown, source_hint)
     scorecard, overall_rating, _not_found_categories, score_rows = _build_scorecard(
         report,
         issues_report,
+        procurement_type=procurement_type,
         company_capacity_signals=capacity_signals,
     )
     executive_summary = _build_executive_summary(
