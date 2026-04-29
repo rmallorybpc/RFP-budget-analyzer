@@ -1341,6 +1341,15 @@ function updateProcurementFields() {
   }
 }
 
+function clearHiddenProcurementFields(procurementType) {
+  if (procurementType !== 'us-federal') {
+    clearUsFederalFields();
+  }
+  if (procurementType !== 'intl-dev') {
+    clearIntlDevFields();
+  }
+}
+
 document.getElementById('procurementType').addEventListener('change', () => {
   updateProcurementFields();
   saveFormSettings();
@@ -1369,6 +1378,9 @@ document.getElementById('intakeForm').addEventListener('submit', async (e) => {
   const contact         = document.getElementById('contact').value.trim();
   const email           = document.getElementById('email').value.trim();
   const pastPerformance = document.getElementById('pastPerformance').value.trim();
+
+  // Clear non-visible procurement-specific inputs before validation/payload build.
+  clearHiddenProcurementFields(procurementType);
 
   if (!procurementType) { showError('Please select a procurement type'); return; }
   if (!company)         { showError('Company name is required.'); return; }
@@ -1437,12 +1449,16 @@ document.getElementById('intakeForm').addEventListener('submit', async (e) => {
   formData.append('company',         company);
   formData.append('contact',         contact);
   formData.append('email',           email);
-  formData.append('naics',           naicsCodes.join(', '));
-  formData.append('certifications',  certs);
-  formData.append('vehicles',        procurementType === 'us-federal' ? document.getElementById('vehicles').value.trim() : '');
-  formData.append('donor',           donor);
-  formData.append('sector',          sector);
-  formData.append('managingContractor', managingContractor);
+  if (procurementType === 'us-federal') {
+    formData.append('naics', naicsCodes.join(', '));
+    formData.append('certifications', certs);
+    formData.append('vehicles', document.getElementById('vehicles').value.trim());
+  }
+  if (procurementType === 'intl-dev') {
+    formData.append('donor', donor);
+    formData.append('sector', sector);
+    formData.append('managingContractor', managingContractor);
+  }
   formData.append('pastPerformance', pastPerformance);
   formData.append('teamSize',        document.getElementById('teamSize').value);
   formData.append('keyPersonnel',    document.getElementById('keyPersonnel').value.trim());
