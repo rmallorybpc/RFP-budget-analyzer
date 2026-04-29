@@ -128,11 +128,11 @@ jobs:
           echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
           echo "| Submission ID | ${{ github.event.client_payload.submissionId || github.event.inputs.submissionId }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Company | ${{ github.event.client_payload.company || github.event.inputs.company }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Contact | ${{ github.event.client_payload.contact || github.event.inputs.contact }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Company | ${{ github.event.client_payload.submitter.company || github.event.inputs.company }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Contact | ${{ github.event.client_payload.submitter.contact || github.event.inputs.contact }} |" >> $GITHUB_STEP_SUMMARY
           echo "| RFP File | ${{ github.event.client_payload.rfpFileName || github.event.inputs.rfpFileName }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Capability Statement File | ${{ github.event.client_payload.capabilityFileName || github.event.inputs.capabilityFileName || 'Not provided' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Supporting Document File | ${{ github.event.client_payload.supportingDocFileName || github.event.inputs.supportingDocFileName || 'Not provided' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Capability Statement File | ${{ github.event.client_payload.documents.capabilityFileName || github.event.inputs.capabilityFileName || 'Not provided' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Supporting Document File | ${{ github.event.client_payload.documents.supportingDocFileName || github.event.inputs.supportingDocFileName || 'Not provided' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Submitted | ${{ github.event.client_payload.submittedAt || github.event.inputs.submittedAt }} |" >> $GITHUB_STEP_SUMMARY
 
       # ── STEP 2: Checkout repository ───────────────────────────────────────
@@ -213,25 +213,25 @@ jobs:
       - name: Write submission metadata
         env:
           SUBMISSION_ID:  ${{ github.event.client_payload.submissionId || github.event.inputs.submissionId }}
-          COMPANY:        ${{ github.event.client_payload.company || github.event.inputs.company }}
-          CONTACT:        ${{ github.event.client_payload.contact || github.event.inputs.contact }}
-          EMAIL:          ${{ github.event.client_payload.email || github.event.inputs.email }}
+          COMPANY:        ${{ github.event.client_payload.submitter.company || github.event.inputs.company }}
+          CONTACT:        ${{ github.event.client_payload.submitter.contact || github.event.inputs.contact }}
+          EMAIL:          ${{ github.event.client_payload.submitter.email || github.event.inputs.email }}
           PROCUREMENT_TYPE: ${{ github.event.client_payload.procurementType || github.event.inputs.procurementType }}
           RFP_FILENAME:   ${{ github.event.client_payload.rfpFileName || github.event.inputs.rfpFileName }}
           SUBMITTED_AT:   ${{ github.event.client_payload.submittedAt || github.event.inputs.submittedAt }}
-          NAICS:          ${{ github.event.client_payload.naics || github.event.inputs.naics }}
-          CERTIFICATIONS: ${{ github.event.client_payload.certifications || github.event.inputs.certifications }}
-          CONTRACT_VEHICLES: ${{ github.event.client_payload.contractVehicles || github.event.inputs.contractVehicles }}
-          DONOR:          ${{ github.event.client_payload.donor || github.event.inputs.donor }}
-          SECTOR:         ${{ github.event.client_payload.sector || github.event.inputs.sector }}
-          MANAGING_CONTRACTOR: ${{ github.event.client_payload.managingContractor || github.event.inputs.managingContractor }}
-          PAST_PERFORMANCE: ${{ github.event.client_payload.pastPerformance || github.event.inputs.pastPerformance }}
-          TEAM_SIZE:      ${{ github.event.client_payload.teamSize || github.event.inputs.teamSize }}
-          KEY_PERSONNEL:  ${{ github.event.client_payload.keyPersonnel || github.event.inputs.keyPersonnel }}
-          CAPABILITY_TEXT: ${{ github.event.client_payload.capabilityText || github.event.inputs.capabilityText }}
-          CAPABILITY_FILENAME: ${{ github.event.client_payload.capabilityFileName || github.event.inputs.capabilityFileName }}
-          SUPPORTING_DOC_TEXT: ${{ github.event.client_payload.supportingDocText || github.event.inputs.supportingDocText }}
-          SUPPORTING_DOC_FILENAME: ${{ github.event.client_payload.supportingDocFileName || github.event.inputs.supportingDocFileName }}
+          NAICS:          ${{ github.event.client_payload.profile.naics || github.event.inputs.naics }}
+          CERTIFICATIONS: ${{ github.event.client_payload.profile.certifications || github.event.inputs.certifications }}
+          CONTRACT_VEHICLES: ${{ github.event.client_payload.profile.contractVehicles || github.event.inputs.contractVehicles }}
+          DONOR:          ${{ github.event.client_payload.profile.donor || github.event.inputs.donor }}
+          SECTOR:         ${{ github.event.client_payload.profile.sector || github.event.inputs.sector }}
+          MANAGING_CONTRACTOR: ${{ github.event.client_payload.profile.managingContractor || github.event.inputs.managingContractor }}
+          PAST_PERFORMANCE: ${{ github.event.client_payload.profile.pastPerformance || github.event.inputs.pastPerformance }}
+          TEAM_SIZE:      ${{ github.event.client_payload.profile.teamSize || github.event.inputs.teamSize }}
+          KEY_PERSONNEL:  ${{ github.event.client_payload.profile.keyPersonnel || github.event.inputs.keyPersonnel }}
+          CAPABILITY_TEXT: ${{ github.event.client_payload.documents.capabilityText || github.event.inputs.capabilityText }}
+          CAPABILITY_FILENAME: ${{ github.event.client_payload.documents.capabilityFileName || github.event.inputs.capabilityFileName }}
+          SUPPORTING_DOC_TEXT: ${{ github.event.client_payload.documents.supportingDocText || github.event.inputs.supportingDocText }}
+          SUPPORTING_DOC_FILENAME: ${{ github.event.client_payload.documents.supportingDocFileName || github.event.inputs.supportingDocFileName }}
         run: |
           DEST_DIR="rfp-pdfs/${SUBMISSION_ID}"
           METADATA_PATH="${DEST_DIR}/submission-metadata.json"
@@ -375,7 +375,7 @@ jobs:
       - name: Commit PDF to rfp-pdfs/
         env:
           SUBMISSION_ID: ${{ github.event.client_payload.submissionId || github.event.inputs.submissionId }}
-          COMPANY:       ${{ github.event.client_payload.company || github.event.inputs.company }}
+          COMPANY:       ${{ github.event.client_payload.submitter.company || github.event.inputs.company }}
           RFP_FILENAME:  ${{ github.event.client_payload.rfpFileName || github.event.inputs.rfpFileName }}
           RFP_PIPELINE_PAT: ${{ secrets.RFP_PIPELINE_PAT }}
         run: |
@@ -404,7 +404,7 @@ jobs:
         if: always()
         env:
           SUBMISSION_ID: ${{ github.event.client_payload.submissionId || github.event.inputs.submissionId }}
-          COMPANY:       ${{ github.event.client_payload.company || github.event.inputs.company }}
+          COMPANY:       ${{ github.event.client_payload.submitter.company || github.event.inputs.company }}
         run: |
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## Pipeline Status" >> $GITHUB_STEP_SUMMARY
