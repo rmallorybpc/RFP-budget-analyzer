@@ -13,7 +13,7 @@ Required source usage:
 - Cross-reference the submitted company profile against ToR requirements throughout the entire analysis, not only in scoring.
 
 Terminology guardrails:
-- Never reference FAR, DFARS, GSA rates, NAICS codes, PWS, or SAM.gov in output for international development submissions.
+- Never use U.S. federal contracting frameworks, dimensions, or compliance terminology in output for international development submissions.
 - Use donor-specific compliance language (for example DFAT, USAID ADS, World Bank procurement) instead of US federal compliance terminology.
 - If a field is missing, write "Not stated in provided text" and continue.
 

@@ -147,6 +147,26 @@ jobs:
 
           # Assets are preprocessed in a dedicated cache step and appended to this context file.
 
+      - name: Detect procurement type from markdown metadata
+        if: steps.prep.outputs.target_count != '0'
+        run: |
+          set -euo pipefail
+
+          target_file="$(head -n 1 .tmp/targets.txt || true)"
+          procurement_type="us-federal"
+
+          if [[ -n "$target_file" && -f "$target_file" ]]; then
+            detected="$(head -n 5 "$target_file" | sed -n 's/^<!-- procurement-type: \(.*\) -->$/\1/p' | head -n 1 | tr '[:upper:]' '[:lower:]' | xargs)"
+            case "$detected" in
+              us-federal|intl-dev|other)
+                procurement_type="$detected"
+                ;;
+            esac
+          fi
+
+          echo "PROCUREMENT_TYPE=$procurement_type" >> "$GITHUB_ENV"
+          echo "Detected PROCUREMENT_TYPE=$procurement_type from ${target_file:-no-target}" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Install Python dependencies for markdown analysis
         if: steps.prep.outputs.target_count != '0'
         run: |
@@ -313,7 +333,7 @@ jobs:
             local request_file="$3"
             local raw_response_file="$4"
             local status_file="$5"
-            local procurement_type="${6:-us-federal}"
+            local procurement_type="${6:-${PROCUREMENT_TYPE:-us-federal}}"
             local incomprehensible_marker="[[INCOMPREHENSIBLE_SOURCE]]"
 
             cp "$in_file" "$out_file"
@@ -350,7 +370,7 @@ jobs:
 
             local user_payload
             if [[ "$procurement_type" == "intl-dev" ]]; then
-              user_payload="Generate a complete International Development BD Opportunity Assessment from this markdown. Follow the system prompt section order exactly. Use donor-specific terminology and cross-reference the Submitted Company Profile throughout. Return markdown only.\n\n--- BEGIN MARKDOWN ---\n$(cat \"$in_file\")\n--- END MARKDOWN ---"
+              user_payload="Generate a complete International Development BD Opportunity Assessment from this markdown. Follow the system prompt section order exactly. Use donor-specific terminology and cross-reference the Submitted Company Profile throughout.\n\nHard exclusions for intl-dev output:\n- Do not include FAR or DFARS clause references\n- Do not include NAICS codes or size standards\n- Do not include GSA schedule rates or PWS labor categories\n- Do not include SAM.gov registration requirements\n- Do not include set-aside categories (8a, HUBZone, SDVOSB, WOSB)\n- Do not include Contract Vehicle Access as a scoring dimension\n- Do not include Certifications and Socioeconomic as a scoring dimension\n\nRequired intl-dev content:\n- Donor and funder identification (for example DFAT and RT4D)\n- Managing contractor context (for example Tetra Tech)\n- GEDSI and inclusion requirements assessment\n- Donor compliance framework assessment (for example DFAT PSEAH, Do No Harm, Child Protection)\n- Person days and budget approach using donor day-rate frameworks, not U.S. federal rate frameworks\n- Evaluation criteria from the ToR (for example Technical Soundness, Value for Money, DFAT principles)\n- Team requirements based on ToR Section XI and Annex A criteria\n\nReturn markdown only.\n\n--- BEGIN MARKDOWN ---\n$(cat \"$in_file\")\n--- END MARKDOWN ---"
             else
               user_payload="Clean and normalize this markdown. Fix mid-sentence breaks and hard wraps. Preserve headings, lists, and source intent exactly. Return markdown only. If the source is too corrupted to safely repair without guessing, return exactly [[INCOMPREHENSIBLE_SOURCE]] and nothing else.\n\n--- BEGIN MARKDOWN ---\n$(cat \"$in_file\")\n--- END MARKDOWN ---"
             fi
@@ -408,7 +428,7 @@ jobs:
               return 0
             fi
 
-            raw="$(head -n 5 "$in_file" | sed -n 's/^<!-- procurement-type: \(.*\) -->$/\1/p' | head -n 1 | tr '[:upper:]' '[:lower:]' | xargs)"
+            raw="$(head -n 5 "$in_file" | sed -n 's/^[[:space:]]*<!-- procurement-type: \(.*\) -->[[:space:]]*$/\1/p' | head -n 1 | tr '[:upper:]' '[:lower:]' | xargs)"
             case "$raw" in
               us-federal|intl-dev|other)
                 echo "$raw"
