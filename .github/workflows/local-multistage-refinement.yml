@@ -38,6 +38,7 @@ jobs:
       GITHUB_MODELS_CLAUDE_MODEL: anthropic/claude-sonnet-4.5
       GITHUB_MODELS_ENDPOINT: https://models.github.ai/inference/chat/completions
       MAX_REFINEMENT_RETRIES: "1"
+      STAGE_E_MAX_INPUT_TOKENS: "100000"
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -468,6 +469,266 @@ jobs:
             return 0
           }
 
+          estimate_tokens() {
+            local in_file="$1"
+            local chars
+            chars="$(wc -m < "$in_file" | tr -d ' ')"
+            echo $(((chars + 3) / 4))
+          }
+
+          detect_procurement_type_from_comment() {
+            local in_file="$1"
+            local comment_type=""
+
+            if [[ ! -f "$in_file" ]]; then
+              echo ""
+              return 0
+            fi
+
+            comment_type="$(head -n 8 "$in_file" | sed -n 's/^[[:space:]]*<!-- procurement-type: \(.*\) -->[[:space:]]*$/\1/p' | head -n 1 | tr '[:upper:]' '[:lower:]' | xargs)"
+            if [[ "$comment_type" == "us-federal" || "$comment_type" == "intl-dev" || "$comment_type" == "other" ]]; then
+              echo "$comment_type"
+              return 0
+            fi
+
+            echo ""
+          }
+
+          validate_stage_e_output() {
+            local artifact="$1"
+            local out_file="$2"
+
+            if [[ ! -s "$out_file" ]]; then
+              return 1
+            fi
+
+            local byte_count
+            byte_count="$(wc -c < "$out_file" | tr -d ' ')"
+            if [[ "$byte_count" -lt 180 ]]; then
+              return 1
+            fi
+
+            case "$artifact" in
+              analysis)
+                grep -Eqi '##|analysis|opportunity|requirement|evaluation|risk' "$out_file"
+                ;;
+              issues)
+                grep -Eqi 'issue|risk|priority|\- ' "$out_file"
+                ;;
+              executive-summary)
+                grep -Eqi 'summary|recommendation|fit score|bid|no-bid' "$out_file"
+                ;;
+              scorecard)
+                grep -Eqi 'score|overall|fit|dimension|\|' "$out_file"
+                ;;
+              *)
+                return 1
+                ;;
+            esac
+          }
+
+          stage_e_generate_artifact() {
+            local in_file="$1"
+            local out_file="$2"
+            local request_file="$3"
+            local raw_response_file="$4"
+            local procurement_type="$5"
+            local artifact="$6"
+            local incomprehensible_marker="[[INCOMPREHENSIBLE_SOURCE]]"
+
+            if [[ "${ENABLE_GITHUB_MODELS_CLAUDE:-true}" != "true" ]]; then
+              printf '{"mode":"skipped","reason":"disabled via ENABLE_GITHUB_MODELS_CLAUDE"}\n' > "$request_file"
+              printf '{"message":"stage E skipped; deterministic output retained"}\n' > "$raw_response_file"
+              echo "fallback:disabled"
+              return 0
+            fi
+
+            if [[ -z "${GITHUB_TOKEN:-}" ]]; then
+              printf '{"mode":"skipped","reason":"GITHUB_TOKEN unavailable"}\n' > "$request_file"
+              printf '{"message":"stage E skipped; deterministic output retained"}\n' > "$raw_response_file"
+              echo "fallback:no-token"
+              return 0
+            fi
+
+            local prompt_file="prompts/05-fit-score-budget.md"
+            if [[ "$procurement_type" == "intl-dev" ]]; then
+              prompt_file="prompts/06-intl-dev-analysis.md"
+            fi
+
+            local system_prompt
+            if [[ -f "$prompt_file" ]]; then
+              system_prompt="$(cat "$prompt_file")"
+            else
+              system_prompt="You are a proposal-analysis assistant. Produce concise, client-ready markdown output with factual extraction and no invented details."
+            fi
+
+            local artifact_instruction
+            case "$artifact" in
+              analysis)
+                artifact_instruction="Produce ONLY the analysis markdown file content for ${in_file##*/}. Include structured sections covering opportunity summary, requirements extraction, evaluation criteria, risks, and recommended actions. Return markdown only."
+                ;;
+              issues)
+                artifact_instruction="Produce ONLY the issues markdown file content for ${in_file##*/}. Include prioritized BD issues with severity and actionable mitigations. Return markdown only."
+                ;;
+              executive-summary)
+                artifact_instruction="Produce ONLY the executive-summary markdown file content for ${in_file##*/}. Include recommendation, fit score statement, strongest alignment, critical gap, top risks, and immediate actions. Return markdown only."
+                ;;
+              scorecard)
+                artifact_instruction="Produce ONLY the scorecard markdown file content for ${in_file##*/}. Include an overall fit score line, category or dimension score table, and top 3 highest-priority BD issues. Return markdown only."
+                ;;
+              *)
+                echo "fallback:unknown-artifact"
+                return 0
+                ;;
+            esac
+
+            local model endpoint
+            model="${GITHUB_MODELS_CLAUDE_MODEL:-anthropic/claude-sonnet-4.5}"
+            endpoint="${GITHUB_MODELS_ENDPOINT:-https://models.github.ai/inference/chat/completions}"
+
+            local user_payload
+            user_payload="${artifact_instruction}\n\nUse the full source markdown exactly as provided below, including metadata and the Submitted Company Profile section.\n\n--- BEGIN MARKDOWN ---\n$(cat \"$in_file\")\n--- END MARKDOWN ---"
+
+            jq -n \
+              --arg model "$model" \
+              --arg system "$system_prompt" \
+              --arg user "$user_payload" \
+              '{
+                model: $model,
+                temperature: 0.1,
+                messages: [
+                  {role: "system", content: $system},
+                  {role: "user", content: $user}
+                ]
+              }' > "$request_file"
+
+            if ! curl --silent --show-error --fail-with-body \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -H "Accept: application/json" \
+              -X POST "$endpoint" \
+              --data @"$request_file" \
+              -o "$raw_response_file"; then
+              echo "fallback:request-failed"
+              return 0
+            fi
+
+            local extracted
+            extracted="$(jq -r 'if (.choices[0].message.content | type) == "string" then .choices[0].message.content else (.choices[0].message.content | map(select(type == "object") | .text // "") | join("")) end' "$raw_response_file" 2>/dev/null || true)"
+
+            if [[ -z "${extracted//[[:space:]]/}" || "$extracted" == "null" ]]; then
+              echo "fallback:empty-response"
+              return 0
+            fi
+
+            local normalized
+            normalized="$(printf '%s' "$extracted" | tr -d '\r' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+            if [[ "$normalized" == "$incomprehensible_marker" ]]; then
+              echo "fallback:incomprehensible"
+              return 0
+            fi
+
+            printf '%s\n' "$extracted" > "$out_file"
+
+            if ! validate_stage_e_output "$artifact" "$out_file"; then
+              echo "fallback:validation-failed"
+              return 0
+            fi
+
+            echo "success:model=${model}"
+            return 0
+          }
+
+          run_stage_e_overrides() {
+            local final_file="$1"
+            local stage_e_dir="$2"
+            local stage_e_status_file="$3"
+
+            mkdir -p "$stage_e_dir"
+
+            local procurement_type_from_comment
+            procurement_type_from_comment="$(detect_procurement_type_from_comment "$final_file")"
+            if [[ -z "$procurement_type_from_comment" ]]; then
+              jq -n \
+                --arg status "fallback:missing-procurement-comment" \
+                '{overallStatus: $status, procurementType: "", tokensEstimated: 0, artifacts: {analysis: $status, issues: $status, executiveSummary: $status, scorecard: $status}}' > "$stage_e_status_file"
+              return 0
+            fi
+
+            local tokens_estimated
+            tokens_estimated="$(estimate_tokens "$final_file")"
+            local max_tokens
+            max_tokens="${STAGE_E_MAX_INPUT_TOKENS:-100000}"
+            if [[ "$tokens_estimated" -gt "$max_tokens" ]]; then
+              jq -n \
+                --arg status "fallback:token-limit" \
+                --arg procurementType "$procurement_type_from_comment" \
+                --argjson tokens "$tokens_estimated" \
+                '{overallStatus: $status, procurementType: $procurementType, tokensEstimated: $tokens, artifacts: {analysis: $status, issues: $status, executiveSummary: $status, scorecard: $status}}' > "$stage_e_status_file"
+              return 0
+            fi
+
+            local analysis_candidate="$stage_e_dir/output.analysis.md"
+            local issues_candidate="$stage_e_dir/output.issues.md"
+            local executive_candidate="$stage_e_dir/output.executive-summary.md"
+            local scorecard_candidate="$stage_e_dir/output.scorecard.md"
+
+            local analysis_status
+            local issues_status
+            local executive_status
+            local scorecard_status
+
+            analysis_status="$(stage_e_generate_artifact "$final_file" "$analysis_candidate" "$stage_e_dir/request.analysis.json" "$stage_e_dir/raw-response.analysis.json" "$procurement_type_from_comment" "analysis")"
+            issues_status="$(stage_e_generate_artifact "$final_file" "$issues_candidate" "$stage_e_dir/request.issues.json" "$stage_e_dir/raw-response.issues.json" "$procurement_type_from_comment" "issues")"
+            executive_status="$(stage_e_generate_artifact "$final_file" "$executive_candidate" "$stage_e_dir/request.executive-summary.json" "$stage_e_dir/raw-response.executive-summary.json" "$procurement_type_from_comment" "executive-summary")"
+            scorecard_status="$(stage_e_generate_artifact "$final_file" "$scorecard_candidate" "$stage_e_dir/request.scorecard.json" "$stage_e_dir/raw-response.scorecard.json" "$procurement_type_from_comment" "scorecard")"
+
+            local analysis_path="${final_file%.md}.analysis.md"
+            local issues_path="${final_file%.md}.issues.md"
+            local executive_path="${final_file%.md}.executive-summary.md"
+            local scorecard_path="${final_file%.md}.scorecard.md"
+
+            if [[ "$analysis_status" == success:* ]]; then
+              cp "$analysis_candidate" "$analysis_path"
+            fi
+            if [[ "$issues_status" == success:* ]]; then
+              cp "$issues_candidate" "$issues_path"
+            fi
+            if [[ "$executive_status" == success:* ]]; then
+              cp "$executive_candidate" "$executive_path"
+            fi
+            if [[ "$scorecard_status" == success:* ]]; then
+              cp "$scorecard_candidate" "$scorecard_path"
+            fi
+
+            local overall_status="fallback:all"
+            if [[ "$analysis_status" == success:* && "$issues_status" == success:* && "$executive_status" == success:* && "$scorecard_status" == success:* ]]; then
+              overall_status="success:all"
+            elif [[ "$analysis_status" == success:* || "$issues_status" == success:* || "$executive_status" == success:* || "$scorecard_status" == success:* ]]; then
+              overall_status="success:partial"
+            fi
+
+            jq -n \
+              --arg overallStatus "$overall_status" \
+              --arg procurementType "$procurement_type_from_comment" \
+              --arg analysis "$analysis_status" \
+              --arg issues "$issues_status" \
+              --arg executiveSummary "$executive_status" \
+              --arg scorecard "$scorecard_status" \
+              --argjson tokens "$tokens_estimated" \
+              '{
+                overallStatus: $overallStatus,
+                procurementType: $procurementType,
+                tokensEstimated: $tokens,
+                artifacts: {
+                  analysis: $analysis,
+                  issues: $issues,
+                  executiveSummary: $executiveSummary,
+                  scorecard: $scorecard
+                }
+              }' > "$stage_e_status_file"
+          }
+
           detect_procurement_type() {
             local in_file="$1"
             local comment_type=""
@@ -567,7 +828,7 @@ jobs:
 
             while [[ "$attempt" -le "$max_attempts" ]]; do
               attempt_dir="$case_dir/attempt-${attempt}"
-              mkdir -p "$attempt_dir/stage-a" "$attempt_dir/stage-b" "$attempt_dir/stage-c" "$attempt_dir/stage-d"
+              mkdir -p "$attempt_dir/stage-a" "$attempt_dir/stage-b" "$attempt_dir/stage-c" "$attempt_dir/stage-d" "$attempt_dir/stage-e"
 
               stage_a_md="$attempt_dir/stage-a/output.md"
               stage_b_md="$attempt_dir/stage-b/output.md"
@@ -623,6 +884,10 @@ jobs:
                 --assets-dir assets \
                 --out-dir "$(dirname "$final_out")"
 
+              stage_e_status_file="$attempt_dir/stage-e/status.json"
+              run_stage_e_overrides "$final_out" "$attempt_dir/stage-e" "$stage_e_status_file"
+              stage_e_overall_status="$(jq -r '.overallStatus // "unknown"' "$stage_e_status_file" 2>/dev/null || echo "unknown")"
+
               python -m pdf_multi_agent_analysis.cli generate-capture-brief \
                 "$final_out"
 
@@ -651,6 +916,8 @@ jobs:
               echo "- stage_c_output: $stage_c_md"
               echo "- stage_d_output: $stage_d_md"
               echo "- stage_d_status: $stage_d_status"
+              echo "- stage_e_status_file: $stage_e_status_file"
+              echo "- stage_e_overall_status: $stage_e_overall_status"
               echo "- attempt_status_log: $case_dir/attempt-status.log"
               echo "- final_output: $final_out"
               echo "- last_success_artifact: $LAST_SUCCESS"

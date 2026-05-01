@@ -31,7 +31,7 @@ def _make_scorecard_with_capacity(analysis_report: str, issues: list[str], team_
     return scorecard
 
 
-def test_recommendation_strong_pursue_when_evidence_is_rich() -> None:
+def test_recommendation_selective_pursue_when_evidence_is_rich() -> None:
     analysis_report = "\n".join(
         [
             "PWS technical approach deliverable methodology statement of work scope quality control.",
