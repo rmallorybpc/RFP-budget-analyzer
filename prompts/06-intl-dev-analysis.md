@@ -11,6 +11,8 @@ Required source usage:
 - Read Procurement Type from the ## Submitted Company Profile section.
 - Read Donor / Funder, Sector / Thematic Area, and Managing Contractor from the same section.
 - Cross-reference the submitted company profile against ToR requirements throughout the entire analysis, not only in scoring.
+- Explicitly read and use evidence from these subsections when scoring fit and risk: ## Capability Statement — [filename], ## Supporting Document — [filename], ## Past Performance Summary, and ## Key Personnel.
+- For GEDSI and donor alignment findings, include profile-backed evidence when available (for example named USAID/DFAT/Chemonics work, testimonials, country experience, safeguarding references, and team qualifications).
 
 Terminology guardrails:
 - Never use U.S. federal contracting frameworks, dimensions, or compliance terminology in output for international development submissions.

@@ -1413,10 +1413,22 @@ def _extract_company_profile_section(markdown_text: str) -> str:
     collected: list[str] = []
     for raw in lines[start:]:
         stripped = raw.strip()
-        if stripped.startswith("## "):
+        if stripped.startswith("# ") and "submitted company profile" not in stripped.lower():
             break
         collected.append(raw)
     return "\n".join(collected).strip()
+
+
+def _extract_profile_heading_value(profile_section: str, heading: str) -> str:
+    if not profile_section.strip():
+        return ""
+
+    pattern = rf"^##\s+{re.escape(heading)}(?:\s+[—-].*)?\s*$\n(.*?)(?=^##\s+|\Z)"
+    match = re.search(pattern, profile_section, flags=re.IGNORECASE | re.MULTILINE | re.DOTALL)
+    if not match:
+        return ""
+
+    return _normalize_bullet_text(match.group(1))
 
 
 def _read_submission_metadata_for_source(source_name: str) -> dict[str, str]:
@@ -1438,6 +1450,24 @@ def _read_submission_metadata_for_source(source_name: str) -> dict[str, str]:
         return {}
 
     return {str(k): str(v) for k, v in payload.items() if isinstance(v, (str, int, float, bool))}
+
+
+def _read_companion_source_markdown(source_name: str) -> str:
+    source_path = Path(source_name)
+    if source_path.suffix.lower() != ".md":
+        return ""
+
+    companion = source_path
+    if source_path.name.endswith("-final.md"):
+        companion = source_path.with_name(source_path.name.replace("-final.md", ".md"))
+
+    if companion == source_path or not companion.exists():
+        return ""
+
+    try:
+        return companion.read_text(encoding="utf-8")
+    except OSError:
+        return ""
 
 
 def _estimate_key_personnel_count(text: str) -> int:
@@ -1466,30 +1496,34 @@ def _estimate_key_personnel_count(text: str) -> int:
 
 def _derive_company_capacity_signals(markdown_text: str, source_name: str) -> dict[str, str | int]:
     profile_section = _extract_company_profile_section(markdown_text)
+    if not profile_section:
+        profile_section = _extract_company_profile_section(_read_companion_source_markdown(source_name))
     metadata = _read_submission_metadata_for_source(source_name)
 
-    team_size = ""
-    key_personnel = ""
+    team_size = _extract_profile_heading_value(profile_section, "Team Size")
+    key_personnel = _extract_profile_heading_value(profile_section, "Key Personnel")
 
-    team_size_patterns = (
-        r"team\s*size\s*[:\-]\s*([^\n]+)",
-        r"employee\s*count\s*[:\-]\s*([^\n]+)",
-    )
-    for pattern in team_size_patterns:
-        match = re.search(pattern, profile_section, flags=re.IGNORECASE)
-        if match:
-            team_size = _normalize_bullet_text(match.group(1))
-            break
+    if not team_size:
+        team_size_patterns = (
+            r"team\s*size\s*[:\-]\s*([^\n]+)",
+            r"employee\s*count\s*[:\-]\s*([^\n]+)",
+        )
+        for pattern in team_size_patterns:
+            match = re.search(pattern, profile_section, flags=re.IGNORECASE)
+            if match:
+                team_size = _normalize_bullet_text(match.group(1))
+                break
 
-    key_personnel_patterns = (
-        r"key\s*personnel\s*[:\-]\s*([^\n]+)",
-        r"core\s*team\s*[:\-]\s*([^\n]+)",
-    )
-    for pattern in key_personnel_patterns:
-        match = re.search(pattern, profile_section, flags=re.IGNORECASE)
-        if match:
-            key_personnel = _normalize_bullet_text(match.group(1))
-            break
+    if not key_personnel:
+        key_personnel_patterns = (
+            r"key\s*personnel\s*[:\-]\s*([^\n]+)",
+            r"core\s*team\s*[:\-]\s*([^\n]+)",
+        )
+        for pattern in key_personnel_patterns:
+            match = re.search(pattern, profile_section, flags=re.IGNORECASE)
+            if match:
+                key_personnel = _normalize_bullet_text(match.group(1))
+                break
 
     team_size = team_size or metadata.get("teamSize", "") or metadata.get("team_size", "")
     key_personnel = key_personnel or metadata.get("keyPersonnel", "") or metadata.get("key_personnel", "")
@@ -1581,9 +1615,10 @@ def _build_scorecard(
     issues_report: str,
     procurement_type: str = "us-federal",
     company_capacity_signals: dict[str, str | int] | None = None,
+    company_profile_text: str = "",
 ) -> tuple[str, str, list[str], list[dict[str, str]]]:
     core_analysis = _strip_reference_sections(analysis_report)
-    full_text = f"{core_analysis}\n{issues_report}"
+    full_text = f"{core_analysis}\n{issues_report}\n{company_profile_text}"
     sentences = _extract_sentences(full_text)
     score_rows: list[dict[str, str]] = []
     capacity_signals = company_capacity_signals or {}
@@ -1903,11 +1938,15 @@ def _analyze_markdown(
         procurement_type,
     )
     capacity_signals = _derive_company_capacity_signals(markdown, source_hint)
+    company_profile_text = _extract_company_profile_section(markdown)
+    if not company_profile_text:
+        company_profile_text = _extract_company_profile_section(_read_companion_source_markdown(source_hint))
     scorecard, overall_rating, _not_found_categories, score_rows = _build_scorecard(
         report,
         issues_report,
         procurement_type=procurement_type,
         company_capacity_signals=capacity_signals,
+        company_profile_text=company_profile_text,
     )
     executive_summary = _build_executive_summary(
         report_title,

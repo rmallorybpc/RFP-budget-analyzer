@@ -3,7 +3,12 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from pdf_multi_agent_analysis.pipeline import _build_scorecard, _score_issue_line
+from pdf_multi_agent_analysis.pipeline import (
+    _build_scorecard,
+    _derive_company_capacity_signals,
+    _extract_company_profile_section,
+    _score_issue_line,
+)
 
 
 def _make_scorecard(analysis_report: str, issues: list[str]) -> str:
@@ -29,17 +34,18 @@ def _make_scorecard_with_capacity(analysis_report: str, issues: list[str], team_
 def test_recommendation_strong_pursue_when_evidence_is_rich() -> None:
     analysis_report = "\n".join(
         [
-            "PWS technical approach deliverable statement of work scope.",
-            "Past performance CPARS recency relevancy similar scope references.",
-            "Set-aside small business HUBZone SDVOSB WOSB with SAM registration.",
-            "Contract vehicle IDIQ BPA Schedule GWAC NAICS ordering period.",
-            "Key personnel resume labor category FTE hours transition mobilization clearance staffing.",
+            "PWS technical approach deliverable methodology statement of work scope quality control.",
+            "Past performance CPARS recency relevancy reference history with multiple references.",
+            "Small business set-aside HUBZone SDVOSB WOSB certification and SAM registration.",
+            "Contract vehicle IDIQ BPA Schedule GWAC NAICS ordering period with active access.",
+            "Key personnel resume labor category FTE hours transition mobilization clearance staffing plan.",
+            "Technical approach includes quality control methodology and scoped deliverables.",
         ]
     )
     scorecard = _make_scorecard(analysis_report, ["Mandatory eligibility gate with Section M evaluation factor."])
 
     assert "Overall BD fit score:" in scorecard
-    assert "Strong Pursue" in scorecard
+    assert "Selective Pursue" in scorecard
 
 
 def test_recommendation_pass_when_no_bd_evidence_exists() -> None:
@@ -106,3 +112,84 @@ def test_team_capacity_penalized_for_missing_critical_roles() -> None:
     )
     assert "45/100" in team_capacity_row
     assert "missing capture leadership" in scorecard
+
+
+def test_extract_company_profile_section_keeps_nested_headings() -> None:
+    markdown = "\n".join(
+        [
+            "# Source",
+            "Some solicitation text.",
+            "## Submitted Company Profile",
+            "**Procurement Type:** International Development",
+            "## Past Performance Summary",
+            "Experience with USAID programming.",
+            "## Capability Statement — capability.docx",
+            "GEDSI delivery and donor-aligned implementation.",
+            "## Supporting Document — testimonials.docx",
+            "Chemonics and USAID testimonials.",
+        ]
+    )
+
+    profile = _extract_company_profile_section(markdown)
+
+    assert "## Past Performance Summary" in profile
+    assert "## Capability Statement — capability.docx" in profile
+    assert "## Supporting Document — testimonials.docx" in profile
+
+
+def test_intl_scorecard_uses_profile_text_for_signal_count() -> None:
+    analysis_report = "Generic summary text with no intl scoring keywords."
+    issues_report = "# BD Issues Summary: demo\n\nPotential BD issues:\n- Generic issue line for formatting only."
+    company_profile_text = "\n".join(
+        [
+            "**Procurement Type:** International Development",
+            "## Past Performance Summary",
+            "USAID delivery experience across Bangladesh, Zambia, and Egypt.",
+            "## Capability Statement — capability.docx",
+            "Strong GEDSI and inclusion integration with donor-aligned implementation.",
+            "## Supporting Document — testimonials.docx",
+            "Client testimonials from USAID and Chemonics confirm donor alignment.",
+            "## Key Personnel",
+            "GEDSI specialist and donor compliance advisor.",
+        ]
+    )
+
+    scorecard, _recommendation, _unused, _rows = _build_scorecard(
+        analysis_report,
+        issues_report,
+        procurement_type="intl-dev",
+        company_profile_text=company_profile_text,
+    )
+
+    donor_row = next(line for line in scorecard.splitlines() if line.startswith("| Donor and Funder Alignment |"))
+    gedsi_row = next(line for line in scorecard.splitlines() if line.startswith("| GEDSI and Inclusion Fit |"))
+
+    assert "Signals found: 0 positive" not in donor_row
+    assert "Signals found: 0 positive" not in gedsi_row
+
+
+def test_capacity_signals_fallback_to_companion_source_markdown(tmp_path) -> None:
+    source_md = tmp_path / "sample.md"
+    final_md = tmp_path / "sample-final.md"
+
+    source_md.write_text(
+        "\n".join(
+            [
+                "# Converted Markdown",
+                "## Submitted Company Profile",
+                "**Procurement Type:** International Development",
+                "## Team Size",
+                "11-50",
+                "## Key Personnel",
+                "Capture Manager, GEDSI Specialist",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    final_md.write_text("# Final Synthesized Output\n", encoding="utf-8")
+
+    signals = _derive_company_capacity_signals(final_md.read_text(encoding="utf-8"), final_md.as_posix())
+
+    assert signals["team_size"] == "11-50"
+    assert "GEDSI Specialist" in str(signals["key_personnel"])

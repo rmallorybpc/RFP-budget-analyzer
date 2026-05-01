@@ -4,22 +4,29 @@
 #
 # Payload from Worker:
 #   submissionId  — unique submission identifier
-#   company       — submitting company name
-#   contact       — contact person name
-#   email         — contact email
 #   procurementType — procurement type slug (us-federal, intl-dev, other)
 #   r2Key         — R2 object key for the PDF e.g. rfp-pdfs/sub_123/filename.pdf
 #   rfpFileName   — original PDF filename
 #   submittedAt   — ISO timestamp
-#   naics         — comma-separated NAICS codes
-#   certifications — comma-separated certifications/socioeconomic statuses
-#   contractVehicles — comma-separated contract vehicles
-#   donor         — donor/funder name for international development submissions
-#   sector        — sector/thematic area for international development submissions
-#   managingContractor — managing contractor for international development submissions
-#   pastPerformance — short past performance summary
-#   teamSize      — team size band from intake form
-#   keyPersonnel  — key personnel summary from intake form
+#   submitter:
+#     company     — submitting company name
+#     contact     — contact person name
+#     email       — contact email
+#   profile:
+#     naics       — comma-separated NAICS codes
+#     certifications — comma-separated certifications/socioeconomic statuses
+#     contractVehicles — comma-separated contract vehicles
+#     donor       — donor/funder name for international development submissions
+#     sector      — sector/thematic area for international development submissions
+#     managingContractor — managing contractor for international development submissions
+#     pastPerformance — short past performance summary
+#     teamSize    — team size band from intake form
+#     keyPersonnel — key personnel summary from intake form
+#   documents:
+#     capabilityText — extracted capability statement text
+#     capabilityFileName — uploaded capability filename
+#     supportingDocText — extracted supporting document text
+#     supportingDocFileName — uploaded supporting document filename
 
 name: RFP Intake Dispatch
 
@@ -253,6 +260,8 @@ jobs:
             --arg pastPerformance "$PAST_PERFORMANCE" \
             --arg teamSize "$TEAM_SIZE" \
             --arg keyPersonnel "$KEY_PERSONNEL" \
+            --arg capabilityFileName "$CAPABILITY_FILENAME" \
+            --arg supportingDocFileName "$SUPPORTING_DOC_FILENAME" \
             --arg workflowRunId "$GITHUB_RUN_ID" \
             '{
               submissionId: $submissionId,
@@ -271,6 +280,8 @@ jobs:
               pastPerformance: $pastPerformance,
               teamSize: $teamSize,
               keyPersonnel: $keyPersonnel,
+              capabilityFileName: $capabilityFileName,
+              supportingDocFileName: $supportingDocFileName,
               workflowRunId: $workflowRunId
             }' > "${METADATA_PATH}"
 
@@ -278,23 +289,27 @@ jobs:
           cat "${METADATA_PATH}"
 
           COMPANY_PROFILE_PATH="${DEST_DIR}/company-profile.md"
-          CAPABILITY_BODY="${CAPABILITY_TEXT}"
-          DONOR_VALUE="${DONOR}"
-          SECTOR_VALUE="${SECTOR}"
-          MANAGING_CONTRACTOR_VALUE="${MANAGING_CONTRACTOR}"
+          normalize_optional_text() {
+            local value="${1:-}"
+            value="$(printf '%s' "${value}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+            local lowered="$(printf '%s' "${value}" | tr '[:upper:]' '[:lower:]')"
+            if [ -z "${value}" ] || [ "${lowered}" = "null" ] || [ "${value}" = '""' ] || [ "${value}" = "''" ]; then
+              printf 'Not provided'
+            else
+              printf '%s' "${value}"
+            fi
+          }
 
-          if [ -z "${CAPABILITY_BODY}" ]; then
-            CAPABILITY_BODY="Not provided"
-          fi
-          if [ -z "${DONOR_VALUE}" ]; then
-            DONOR_VALUE="Not provided"
-          fi
-          if [ -z "${SECTOR_VALUE}" ]; then
-            SECTOR_VALUE="Not provided"
-          fi
-          if [ -z "${MANAGING_CONTRACTOR_VALUE}" ]; then
-            MANAGING_CONTRACTOR_VALUE="Not provided"
-          fi
+          DONOR_VALUE="$(normalize_optional_text "${DONOR}")"
+          SECTOR_VALUE="$(normalize_optional_text "${SECTOR}")"
+          MANAGING_CONTRACTOR_VALUE="$(normalize_optional_text "${MANAGING_CONTRACTOR}")"
+          PAST_PERFORMANCE_VALUE="$(normalize_optional_text "${PAST_PERFORMANCE}")"
+          TEAM_SIZE_VALUE="$(normalize_optional_text "${TEAM_SIZE}")"
+          KEY_PERSONNEL_VALUE="$(normalize_optional_text "${KEY_PERSONNEL}")"
+          CAPABILITY_BODY="$(normalize_optional_text "${CAPABILITY_TEXT}")"
+          SUPPORTING_DOC_BODY="$(normalize_optional_text "${SUPPORTING_DOC_TEXT}")"
+          CAPABILITY_HEADER_FILENAME="$(normalize_optional_text "${CAPABILITY_FILENAME}")"
+          SUPPORTING_HEADER_FILENAME="$(normalize_optional_text "${SUPPORTING_DOC_FILENAME}")"
 
           PROCUREMENT_TYPE_SLUG="${PROCUREMENT_TYPE}"
           if [ -z "${PROCUREMENT_TYPE_SLUG}" ]; then
@@ -361,29 +376,20 @@ jobs:
           cat >> "${COMPANY_PROFILE_PATH}" << EOF
 
           ## Past Performance Summary
-          ${PAST_PERFORMANCE}
+          ${PAST_PERFORMANCE_VALUE}
 
           ## Team Size
-          ${TEAM_SIZE}
+          ${TEAM_SIZE_VALUE}
 
           ## Key Personnel
-          ${KEY_PERSONNEL}
+          ${KEY_PERSONNEL_VALUE}
 
-          ## Capability Statement
+          ## Capability Statement — ${CAPABILITY_HEADER_FILENAME}
           ${CAPABILITY_BODY}
-          EOF
 
-          if [ -n "${SUPPORTING_DOC_TEXT}" ]; then
-            SUPPORTING_HEADER_FILENAME="${SUPPORTING_DOC_FILENAME}"
-            if [ -z "${SUPPORTING_HEADER_FILENAME}" ]; then
-              SUPPORTING_HEADER_FILENAME="Document"
-            fi
-            {
-              echo ""
-              echo "## Supporting Document — ${SUPPORTING_HEADER_FILENAME}"
-              echo "${SUPPORTING_DOC_TEXT}"
-            } >> "${COMPANY_PROFILE_PATH}"
-          fi
+          ## Supporting Document — ${SUPPORTING_HEADER_FILENAME}
+          ${SUPPORTING_DOC_BODY}
+          EOF
 
           echo "Company profile written to ${COMPANY_PROFILE_PATH}"
 
