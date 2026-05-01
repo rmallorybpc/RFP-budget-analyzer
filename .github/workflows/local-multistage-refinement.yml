@@ -304,10 +304,10 @@ jobs:
         if: steps.prep.outputs.target_count != '0'
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          RUN_DIR: ${{ steps.prep.outputs.run_dir }}
         run: |
           set -euo pipefail
 
-          RUN_DIR="${{ steps.prep.outputs.run_dir }}"
           CONTEXT_FILE="$RUN_DIR/knowledge-context.md"
           LAST_SUCCESS="$CONTEXT_FILE"
           echo "$LAST_SUCCESS" > "$RUN_DIR/last-success-artifact.txt"
