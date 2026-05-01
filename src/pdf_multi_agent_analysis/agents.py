@@ -75,57 +75,82 @@ def _detect_section_heading(text: str) -> str | None:
     return None
 
 
-def _strategic_takeaways(signals: dict[str, bool], assets_context: str) -> list[str]:
-    takeaways: list[str] = []
-
-    if signals["set_aside_signal"] and signals["naics_signal"]:
-        takeaways.append("Set-aside and NAICS signals are present, so eligibility should be confirmed before committing bid resources.")
-    elif signals["set_aside_signal"]:
-        takeaways.append("Set-aside language appears in scope, which can create eligibility gates that drive bid or no-bid outcomes.")
-
-    if signals["evaluation_signal"]:
-        takeaways.append("Evaluation-factor language appears in the chunk, enabling early proposal emphasis decisions aligned to likely scoring priorities.")
-
-    if signals["past_performance_signal"]:
-        takeaways.append("Past performance cues suggest recency and relevancy evidence may be a discriminator in evaluator confidence.")
-
-    if signals["staffing_signal"] or signals["transition_signal"]:
-        takeaways.append("Staffing and transition requirements indicate execution feasibility risk that should be quantified before final pursuit approval.")
-
-    if signals["pricing_signal"]:
-        takeaways.append("Pricing and cost-realism signals indicate a need to pressure-test labor mix and wrap assumptions against likely evaluator scrutiny.")
-
-    if signals["incumbent_signal"]:
-        takeaways.append("Incumbent references may indicate structural advantage, so your response strategy should emphasize material differentiation and transition confidence.")
-
-    if assets_context.strip():
-        takeaways.append("Reference assets are available, supporting faster alignment to your internal capture standards and reusable proof points.")
-
-    if not takeaways:
-        takeaways.append("This chunk is decision-neutral in isolation; rely on cross-chunk synthesis before finalizing bid posture.")
-
-    return takeaways[:4]
-
-
-def _strategic_next_steps(signals: dict[str, bool], has_assets: bool) -> list[str]:
-    actions = [
-        "Classify this chunk as pursue, conditional pursue, or pass based on bid-impact evidence.",
+def _split_sentences(text: str) -> list[str]:
+    return [
+        re.sub(r"\s+", " ", sentence).strip()
+        for sentence in re.split(r"(?<=[.!?;])\s+|\n+", text)
+        if sentence.strip()
     ]
 
+
+def _find_first_matching_sentence(text: str, pattern: str) -> str:
+    regex = re.compile(pattern, re.IGNORECASE)
+    for sentence in _split_sentences(text):
+        if regex.search(sentence):
+            return sentence
+    return ""
+
+
+def _trim_sentence(text: str, max_chars: int = 220) -> str:
+    if len(text) <= max_chars:
+        return text
+    window = text[:max_chars].rstrip()
+    cut = window.rfind(" ")
+    if cut >= 80:
+        return window[:cut].rstrip() + "..."
+    return window + "..."
+
+
+def _strategic_takeaways(signals: dict[str, bool], markdown_chunk: str) -> list[str]:
+    takeaways: list[str] = []
+
+    category_patterns: list[tuple[str, str, bool]] = [
+        ("Eligibility", r"\b(set-aside|small business|8\(a\)|hubzone|wosb|sdvosb|naics|size standard)\b", signals["set_aside_signal"] or signals["naics_signal"]),
+        ("Evaluation", r"\b(evaluation|factor|section\s+m|tradeoff|lpta|best value)\b", signals["evaluation_signal"]),
+        ("Past Performance", r"\b(past performance|cpars|references|recency|relevancy)\b", signals["past_performance_signal"]),
+        ("Staffing and Transition", r"\b(key personnel|resume|staffing|labor category|fte|hours|transition|mobilization|phase-in)\b", signals["staffing_signal"] or signals["transition_signal"]),
+        ("Pricing", r"\b(price|cost|ige|ceiling|nte|cost realism|wage determination)\b", signals["pricing_signal"]),
+        ("Incumbent", r"\bincumbent\b", signals["incumbent_signal"]),
+    ]
+
+    for label, pattern, enabled in category_patterns:
+        if not enabled:
+            continue
+        sentence = _find_first_matching_sentence(markdown_chunk, pattern)
+        if not sentence:
+            continue
+        takeaways.append(f"{label} signal from this section: {_trim_sentence(sentence)}")
+        if len(takeaways) >= 4:
+            break
+
+    return takeaways
+
+
+def _strategic_next_steps(signals: dict[str, bool], markdown_chunk: str, has_assets: bool) -> list[str]:
+    actions: list[str] = []
+
     if signals["set_aside_signal"] or signals["naics_signal"]:
-        actions.append("Validate eligibility gates and identify any disqualifiers tied to NAICS, size standard, or set-aside status.")
+        sentence = _find_first_matching_sentence(markdown_chunk, r"\b(set-aside|small business|8\(a\)|hubzone|wosb|sdvosb|naics|size standard)\b")
+        if sentence:
+            actions.append(f"Verify eligibility assumptions against this requirement language: {_trim_sentence(sentence, max_chars=180)}")
 
     if signals["evaluation_signal"]:
-        actions.append("Map proposal emphasis to stated evaluation factors and identify the highest-risk volume for red-team priority.")
+        sentence = _find_first_matching_sentence(markdown_chunk, r"\b(evaluation|factor|section\s+m|tradeoff|lpta|best value)\b")
+        if sentence:
+            actions.append(f"Align proposal volume emphasis to the stated evaluation language in this section: {_trim_sentence(sentence, max_chars=180)}")
 
     if signals["pricing_signal"]:
-        actions.append("Run a preliminary price-to-win check using labor assumptions, wage requirements, and any stated budget ceiling.")
+        sentence = _find_first_matching_sentence(markdown_chunk, r"\b(price|cost|ige|ceiling|nte|cost realism|wage determination)\b")
+        if sentence:
+            actions.append(f"Stress-test pricing assumptions using this section's pricing signal: {_trim_sentence(sentence, max_chars=180)}")
 
     if signals["staffing_signal"] or signals["transition_signal"]:
-        actions.append("Confirm staffing and mobilization assumptions are achievable within the stated period of performance and transition window.")
+        sentence = _find_first_matching_sentence(markdown_chunk, r"\b(key personnel|resume|staffing|labor category|fte|hours|transition|mobilization|phase-in)\b")
+        if sentence:
+            actions.append(f"Validate staffing and mobilization feasibility against this requirement: {_trim_sentence(sentence, max_chars=180)}")
 
-    if has_assets:
-        actions.append("Map findings to reference assets and reuse validated win-theme evidence in your capture brief.")
+    if has_assets and actions:
+        actions.append("Map these section findings to available reference assets to prepare opportunity-specific proposal proof points.")
 
     return actions[:4]
 
@@ -236,9 +261,12 @@ class SynthesizerAgent(BaseAgent):
         preview = _summary_preview(markdown_chunk)
         signals = _find_clause_signals(markdown_chunk)
         has_assets = bool(assets_context.strip())
-        takeaways = _strategic_takeaways(signals, assets_context)
-        next_steps = _strategic_next_steps(signals, has_assets)
+        takeaways = _strategic_takeaways(signals, markdown_chunk)
+        next_steps = _strategic_next_steps(signals, markdown_chunk, has_assets)
         heading = _detect_section_heading(markdown_chunk)
+
+        if not takeaways:
+            takeaways = ["No significant solicitation-specific BD issues were identified in this section."]
 
         output_lines = ["Summary preview: " + preview]
         if heading:

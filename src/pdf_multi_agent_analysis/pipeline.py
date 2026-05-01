@@ -486,10 +486,8 @@ def _summarize_finding_for_reader(text: str) -> str:
 def _rewrite_pipeline_jargon(text: str) -> str:
     rewritten = _normalize_bullet_text(text)
     replacements: tuple[tuple[str, str], ...] = (
-        ("cross-chunk synthesis", "full-document synthesis"),
-        ("Classify this chunk as pursue, conditional pursue, or pass based on bid-impact evidence.", "Set a preliminary bid posture (pursue, conditional pursue, or pass) based on the evidence in this section."),
+        ("cross-chunk synthesis", "full-document review"),
         ("chunk", "solicitation section"),
-        ("decision-neutral in isolation", "not decisive on its own"),
         ("Classify this chunk", "Classify this solicitation section"),
     )
     for old, new in replacements:
@@ -976,7 +974,7 @@ def _build_sectioned_analysis_report(
             for finding in reader_findings:
                 lines.append(f"- {finding}")
         else:
-            lines.append("- No high-confidence BD decision signals were detected in this section.")
+            lines.append("- No significant solicitation-specific BD issues were identified in this section.")
 
         lines.append("")
         section_takeaways: list[str] = []
